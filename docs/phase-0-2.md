@@ -40,12 +40,14 @@ Lists are emitted in AST traversal order, which is *not* always source order (Ja
 
 `stream_source`, `stream_op`, `collector`, `optional`, `predicate`, `comparison`, `null_check`,
 `anonymous_class`, `initialized` come from call-chain shape and well-known names, not from types.
-For example `x.map(...)` is only tagged `optional` when the chain starts at `Optional.*`. Phase 3
-(symbol resolution) is where these become resolved facts.
+For example `x.map(...)` is only tagged `optional` when the chain starts at `Optional.*`. They stay
+syntactic hints even after Phase 3: symbol resolution (see
+[phase-3-symbol-resolution.md](phase-3-symbol-resolution.md)) resolves call *targets*, but it has
+no JDK member signatures, so it cannot turn these tags into type facts.
 
 ## Known limits (deliberate, for later phases)
 
-* No symbol resolution: calls are recorded by name/scope text only (Phase 3).
+* Symbol resolution happens after parsing, in Python: see [phase-3-symbol-resolution.md](phase-3-symbol-resolution.md).
 * Methods of anonymous/local classes are folded into the enclosing method's statements/expressions,
   not extracted as separate methods. Enum-constant class bodies and initializer blocks are skipped.
 * Operators `!`, casts, `instanceof` and array access are not recorded as expressions yet.

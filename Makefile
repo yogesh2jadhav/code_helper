@@ -2,7 +2,7 @@
 JDK17_HOME ?= /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 PY := .venv/bin
 
-.PHONY: install analyzer test lint typecheck check backend frontend scan index
+.PHONY: install analyzer test lint typecheck check backend frontend scan index resolve
 
 install:
 	uv sync --python 3.12 --group dev
@@ -34,3 +34,6 @@ scan:
 
 index:
 	PYTHONPATH=backend $(PY)/python -m app.cli index $(SRC)
+
+resolve:
+	PYTHONPATH=backend $(PY)/python -m app.cli resolve $(SRC)

@@ -30,6 +30,23 @@ public final class Model {
     public record Statement(
             int id, Integer parentId, String kind, int startLine, int endLine, int depth, String text) {}
 
+    /**
+     * Cheap syntactic hint about an argument or initializer, used for overload narrowing.
+     * kind: literal (type = String|int|long|float|double|char|boolean|null) | name (name) |
+     * new (type) | cast (type) | this | expr (exprId = a recorded call/field-access in the same
+     * method, whose resolved type is the argument's type) | other.
+     */
+    public record ValueHint(String kind, String type, String name, Integer exprId) {
+        public ValueHint(String kind, String type, String name) {
+            this(kind, type, name, null);
+        }
+    }
+
+    /**
+     * receiverKind: none | this | super | expr (receiverExprId points at another expression of this
+     * method) | cast / literal (receiverType set) | other. scopeEndLine is set on declarations
+     * (variable_declaration): the last line on which the variable is in scope.
+     */
     public record Expression(
             int id,
             Integer statementId,
@@ -42,7 +59,13 @@ public final class Model {
             String type,
             Integer argCount,
             String operator,
-            List<String> tags) {}
+            List<String> tags,
+            String receiverKind,
+            Integer receiverExprId,
+            String receiverType,
+            List<ValueHint> args,
+            ValueHint initializer,
+            Integer scopeEndLine) {}
 
     public record Comment(String kind, int startLine, int endLine, String text) {}
 

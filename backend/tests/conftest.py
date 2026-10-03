@@ -43,3 +43,6 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     yield get_settings()
     get_settings.cache_clear()
     get_job_manager.cache_clear()
+
+
+PROJECT = Path(__file__).parent / "fixtures" / "project"

@@ -1,20 +1,37 @@
 package dev.codehelper.analyzer;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.BodyDeclaration;
+import com.github.javaparser.ast.body.CallableDeclaration;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.BooleanLiteralExpr;
+import com.github.javaparser.ast.expr.CastExpr;
+import com.github.javaparser.ast.expr.CharLiteralExpr;
+import com.github.javaparser.ast.expr.ClassExpr;
 import com.github.javaparser.ast.expr.ConditionalExpr;
+import com.github.javaparser.ast.expr.DoubleLiteralExpr;
+import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
+import com.github.javaparser.ast.expr.InstanceOfExpr;
+import com.github.javaparser.ast.expr.IntegerLiteralExpr;
 import com.github.javaparser.ast.expr.LambdaExpr;
+import com.github.javaparser.ast.expr.LongLiteralExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.NullLiteralExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.expr.PatternExpr;
+import com.github.javaparser.ast.expr.StringLiteralExpr;
+import com.github.javaparser.ast.expr.SuperExpr;
 import com.github.javaparser.ast.expr.SwitchExpr;
+import com.github.javaparser.ast.expr.TextBlockLiteralExpr;
+import com.github.javaparser.ast.expr.ThisExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.expr.VariableDeclarationExpr;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.BreakStmt;
 import com.github.javaparser.ast.stmt.CatchClause;
 import com.github.javaparser.ast.stmt.ContinueStmt;
@@ -22,6 +39,7 @@ import com.github.javaparser.ast.stmt.DoStmt;
 import com.github.javaparser.ast.stmt.ForEachStmt;
 import com.github.javaparser.ast.stmt.ForStmt;
 import com.github.javaparser.ast.stmt.IfStmt;
+import com.github.javaparser.ast.stmt.LocalClassDeclarationStmt;
 import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.SwitchEntry;
 import com.github.javaparser.ast.stmt.SwitchStmt;
@@ -32,6 +50,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -40,6 +60,7 @@ import java.util.stream.Collectors;
  *
  * <p>Detection is purely syntactic (no symbol resolution): stream/Optional/collector tags are
  * derived from call-chain shape and well-known names, so they are heuristics, not type facts.
+ * Name resolution happens later, in Python, over these facts.
  *
  * <p>Statement depth = number of enclosing control structures (if/for/foreach/while/do/switch/try).
  * else-if chains stay at the depth of the first if; case/catch/else/finally entries sit at the same
@@ -71,13 +92,48 @@ final class MethodWalker {
     private static final Set<String> COMPLEXITY_STATEMENTS =
             Set.of("if", "else_if", "for", "foreach", "while", "do", "case", "catch");
 
+    /** Mutable expression record, frozen into {@link Model.Expression} once receivers are linked. */
+    private static final class Ex {
+        int id;
+        Integer statementId;
+        String kind;
+        int startLine;
+        int endLine;
+        String text;
+        String name;
+        String scope;
+        String type;
+        Integer argCount;
+        String operator;
+        final List<String> tags = new ArrayList<>();
+        String receiverKind;
+        Node receiverNode;
+        Integer receiverExprId;
+        String receiverType;
+        List<Model.ValueHint> args;
+        Model.ValueHint initializer;
+        Integer scopeEndLine;
+
+        Model.Expression freeze() {
+            return new Model.Expression(id, statementId, kind, startLine, endLine, text, name, scope, type,
+                    argCount, operator, tags, receiverKind, receiverExprId, receiverType, args, initializer,
+                    scopeEndLine);
+        }
+    }
+
     private final boolean staticCollectors;
     private final List<Model.Statement> statements = new ArrayList<>();
-    private final List<Model.Expression> expressions = new ArrayList<>();
+    private final List<Ex> exprs = new ArrayList<>();
+    private final Map<Node, Integer> exprIds = new IdentityHashMap<>();
     private final Set<Node> predicateArgs = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final List<PendingHint> pendingHints = new ArrayList<>();
+
+    /** An "expr" hint waiting for the id of the expression it points at (index -1 = initializer). */
+    private record PendingHint(Ex owner, int index, Node target) {}
     private int nextStatementId = 1;
     private int nextExpressionId = 1;
     private int maxNesting = 0;
+    private int localClassDepth = 0;
 
     MethodWalker(boolean staticCollectors) {
         this.staticCollectors = staticCollectors;
@@ -85,6 +141,27 @@ final class MethodWalker {
 
     void walkBody(Node body) {
         walk(body, null, 0);
+        for (PendingHint p : pendingHints) {
+            Integer id = exprIds.get(p.target());
+            Model.ValueHint linked = id == null
+                    ? new Model.ValueHint("other", null, null)
+                    : new Model.ValueHint("expr", null, null, id);
+            if (p.index() >= 0) {
+                p.owner().args.set(p.index(), linked);
+            } else {
+                p.owner().initializer = linked;
+            }
+        }
+        for (Ex ex : exprs) {
+            if (ex.receiverNode != null) {
+                Integer id = exprIds.get(ex.receiverNode);
+                if (id != null) {
+                    ex.receiverExprId = id;
+                } else {
+                    ex.receiverKind = "other";
+                }
+            }
+        }
     }
 
     List<Model.Statement> statements() {
@@ -92,7 +169,7 @@ final class MethodWalker {
     }
 
     List<Model.Expression> expressions() {
-        return expressions;
+        return exprs.stream().map(Ex::freeze).collect(Collectors.toList());
     }
 
     int maxNestingDepth() {
@@ -104,8 +181,8 @@ final class MethodWalker {
         for (Model.Statement s : statements) {
             if (COMPLEXITY_STATEMENTS.contains(s.kind())) n++;
         }
-        for (Model.Expression e : expressions) {
-            if (e.kind().equals("ternary") || e.kind().equals("logical")) n++;
+        for (Ex e : exprs) {
+            if (e.kind.equals("ternary") || e.kind.equals("logical")) n++;
         }
         return n;
     }
@@ -114,16 +191,36 @@ final class MethodWalker {
 
     /** Handles wrapper entries (plain else, finally) that have no node of their own, then visits. */
     private void walk(Node n, Integer parent, int depth) {
-        Node p = n.getParentNode().orElse(null);
-        if (p instanceof IfStmt ifs && !(n instanceof IfStmt) && ifs.getElseStmt().orElse(null) == n) {
-            int id = addStatement("else", n, parent, depth, null);
-            visit(n, id, depth);
-        } else if (p instanceof TryStmt t && t.getFinallyBlock().orElse(null) == n) {
-            int id = addStatement("finally", n, parent, depth, null);
-            visit(n, id, depth);
-        } else {
-            visit(n, parent, depth);
+        boolean enteringLocalClass = n instanceof LocalClassDeclarationStmt || isAnonymousBodyMember(n);
+        if (enteringLocalClass) localClassDepth++;
+        try {
+            Node p = n.getParentNode().orElse(null);
+            if (p instanceof IfStmt ifs && !(n instanceof IfStmt) && ifs.getElseStmt().orElse(null) == n) {
+                int id = addStatement("else", n, parent, depth, null);
+                visit(n, id, depth);
+            } else if (p instanceof TryStmt t && t.getFinallyBlock().orElse(null) == n) {
+                int id = addStatement("finally", n, parent, depth, null);
+                visit(n, id, depth);
+            } else {
+                visit(n, parent, depth);
+            }
+        } finally {
+            if (enteringLocalClass) localClassDepth--;
         }
+    }
+
+    private static boolean isAnonymousBodyMember(Node n) {
+        if (!(n instanceof BodyDeclaration<?>)) return false;
+        Node p = n.getParentNode().orElse(null);
+        if (!(p instanceof ObjectCreationExpr oce)) return false;
+        return oce.getAnonymousClassBody().map(body -> containsIdentity(body, n)).orElse(false);
+    }
+
+    private static boolean containsIdentity(List<?> list, Object o) {
+        for (Object x : list) {
+            if (x == o) return true;
+        }
+        return false;
     }
 
     private void visit(Node n, Integer parent, int depth) {
@@ -175,6 +272,9 @@ final class MethodWalker {
         } else if (n instanceof CatchClause c) {
             childParent = addStatement("catch", n, parent, depth,
                     FileAnalyzer.clip(FileAnalyzer.oneLine(c.getParameter().toString()), 200));
+            Ex ex = add("variable_declaration", c.getParameter(), childParent, c.getParameter().getNameAsString(),
+                    null, c.getParameter().getType().asString(), null, null, List.of("catch_param"));
+            ex.scopeEndLine = line(c, false);
         } else if (n instanceof ReturnStmt s) {
             childParent = addStatement("return", n, parent, depth, s.getExpression().map(MethodWalker::clipExpr).orElse(null));
         } else if (n instanceof ThrowStmt s) {
@@ -183,6 +283,12 @@ final class MethodWalker {
             childParent = addStatement("break", n, parent, depth, s.getLabel().map(Object::toString).orElse(null));
         } else if (n instanceof ContinueStmt s) {
             childParent = addStatement("continue", n, parent, depth, s.getLabel().map(Object::toString).orElse(null));
+        } else if (n instanceof com.github.javaparser.ast.body.Parameter p
+                && p.getParentNode().orElse(null) instanceof CallableDeclaration<?> owner) {
+            // a parameter of a method that lives inside an anonymous/local class
+            Ex ex = add("variable_declaration", p, parent, p.getNameAsString(), null, p.getType().asString(),
+                    null, null, List.of("param"));
+            ex.scopeEndLine = line(owner, false);
         } else if (n instanceof Expression e) {
             if (n instanceof SwitchExpr) {
                 control(depth);
@@ -213,8 +319,11 @@ final class MethodWalker {
     private void recordExpression(Expression e, Integer stmt) {
         if (e instanceof MethodCallExpr c) {
             methodCall(c, stmt);
+        } else if (e instanceof NameExpr ne) {
+            nameRef(ne, stmt);
         } else if (e instanceof FieldAccessExpr f) {
-            add("field_access", e, stmt, f.getNameAsString(), f.getScope().toString(), null, null, null, List.of());
+            Ex ex = add("field_access", e, stmt, f.getNameAsString(), f.getScope().toString(), null, null, null, List.of());
+            setReceiver(ex, f.getScope());
         } else if (e instanceof AssignExpr a) {
             add("assignment", e, stmt, FileAnalyzer.clip(FileAnalyzer.oneLine(a.getTarget().toString()), 120),
                     null, null, null, a.getOperator().asString(), List.of());
@@ -222,28 +331,72 @@ final class MethodWalker {
             add("assignment", e, stmt, FileAnalyzer.clip(FileAnalyzer.oneLine(u.getExpression().toString()), 120),
                     null, null, null, incDecSymbol(u), List.of());
         } else if (e instanceof ObjectCreationExpr o) {
-            add("object_creation", e, stmt, o.getType().getNameAsString(), null, o.getType().asString(),
-                    o.getArguments().size(), null, o.getAnonymousClassBody().isPresent() ? List.of("anonymous_class") : List.of());
+            Ex ex = add("object_creation", e, stmt, o.getType().getNameAsString(), null, o.getType().asString(),
+                    o.getArguments().size(), null,
+                    o.getAnonymousClassBody().isPresent() ? List.of("anonymous_class") : List.of());
+            setArgs(ex, o.getArguments());
         } else if (e instanceof LambdaExpr l) {
             add("lambda", e, stmt, null, null, null, l.getParameters().size(), null,
                     predicateArgs.contains(e) ? List.of("predicate") : List.of());
+            for (com.github.javaparser.ast.body.Parameter p : l.getParameters()) {
+                Ex ex = add("variable_declaration", p, stmt, p.getNameAsString(), null,
+                        p.getType().isUnknownType() ? null : p.getType().asString(), null, null, List.of("lambda_param"));
+                ex.scopeEndLine = line(l, false);
+            }
         } else if (e instanceof MethodReferenceExpr r) {
             List<String> tags = new ArrayList<>();
             if (predicateArgs.contains(e)) tags.add("predicate");
             if (r.getScope().toString().equals("Objects") && NULL_CHECK_CALLS.contains(r.getIdentifier())) {
                 tags.add("null_check");
             }
-            add("method_ref", e, stmt, r.getIdentifier(), r.getScope().toString(), null, null, null, tags);
-        } else if (e instanceof SwitchExpr) {
-            add("switch_expr", e, stmt, null, null, null, null, null, List.of());
+            Ex ex = add("method_ref", e, stmt, r.getIdentifier(), r.getScope().toString(), null, null, null, tags);
+            setReceiver(ex, r.getScope());
         } else if (e instanceof ConditionalExpr) {
             add("ternary", e, stmt, null, null, null, null, "?:", List.of());
         } else if (e instanceof BinaryExpr b) {
             binary(b, stmt);
+        } else if (e instanceof SwitchExpr) {
+            add("switch_expr", e, stmt, null, null, null, null, null, List.of());
         } else if (e instanceof VariableDeclarationExpr v) {
-            v.getVariables().forEach(d -> add("variable_declaration", d, stmt, d.getNameAsString(), null,
-                    d.getType().asString(), null, null, d.getInitializer().isPresent() ? List.of("initialized") : List.of()));
+            for (com.github.javaparser.ast.body.VariableDeclarator d : v.getVariables()) {
+                List<String> tags = new ArrayList<>();
+                if (d.getInitializer().isPresent()) tags.add("initialized");
+                Node holder = v.getParentNode().orElse(null);
+                if (holder instanceof ForEachStmt) tags.add("foreach");
+                else if (holder instanceof ForStmt) tags.add("for_init");
+                else if (holder instanceof TryStmt) tags.add("resource");
+                Ex ex = add("variable_declaration", d, stmt, d.getNameAsString(), null, d.getType().asString(),
+                        null, null, tags);
+                ex.scopeEndLine = declarationScopeEnd(v);
+                d.getInitializer().ifPresent(init -> {
+                    ex.initializer = hint(init);
+                    if (ex.initializer.kind().equals("expr")) {
+                        pendingHints.add(new PendingHint(ex, -1, unwrap(init)));
+                    }
+                });
+            }
+        } else if (e instanceof InstanceOfExpr io) {
+            Optional<PatternExpr> pattern = io.getPattern();
+            if (pattern.isPresent() && pattern.get().isTypePatternExpr()) {
+                var tp = pattern.get().asTypePatternExpr();
+                Ex ex = add("variable_declaration", tp, stmt, tp.getNameAsString(), null, tp.getType().asString(),
+                        null, null, List.of("pattern"));
+                ex.scopeEndLine = enclosingBlockEnd(io);
+            }
         }
+    }
+
+    private void nameRef(NameExpr ne, Integer stmt) {
+        Node p = ne.getParentNode().orElse(null);
+        if (p instanceof SwitchEntry se && containsIdentity(se.getLabels(), ne)) {
+            return; // enum-constant case label, not a variable reference
+        }
+        List<String> tags = new ArrayList<>();
+        if ((p instanceof AssignExpr a && a.getTarget() == ne)
+                || (p instanceof UnaryExpr u && isIncDec(u) && u.getExpression() == ne)) {
+            tags.add("assignment_target");
+        }
+        add("name_ref", ne, stmt, ne.getNameAsString(), null, null, null, null, tags);
     }
 
     private void binary(BinaryExpr b, Integer stmt) {
@@ -292,8 +445,11 @@ final class MethodWalker {
                     .findFirst()
                     .ifPresent(predicateArgs::add);
         }
-        add("method_call", c, stmt, name, scopeText == null ? null : FileAnalyzer.clip(FileAnalyzer.oneLine(scopeText), 120),
+        Ex ex = add("method_call", c, stmt, name,
+                scopeText == null ? null : FileAnalyzer.clip(FileAnalyzer.oneLine(scopeText), 120),
                 null, c.getArguments().size(), null, tags);
+        setReceiver(ex, c.getScope().orElse(null));
+        setArgs(ex, c.getArguments());
     }
 
     /** "stream" / "optional" if the receiver chain starts from a recognisable source, else null. */
@@ -311,10 +467,130 @@ final class MethodWalker {
         return null;
     }
 
-    private void add(String kind, Node n, Integer stmt, String name, String scope, String type,
-                     Integer argCount, String operator, List<String> tags) {
-        expressions.add(new Model.Expression(nextExpressionId++, stmt, kind, line(n, true), line(n, false),
-                clipExpr(n), name, scope, type, argCount, operator, tags));
+    // ---- receivers, hints, scopes -------------------------------------------------------------
+
+    private void setReceiver(Ex ex, Expression scope) {
+        if (scope == null) {
+            ex.receiverKind = "none";
+            return;
+        }
+        Expression s = unwrap(scope);
+        if (s instanceof ThisExpr t) {
+            ex.receiverKind = t.getTypeName().isPresent() ? "other" : "this";
+        } else if (s instanceof SuperExpr) {
+            ex.receiverKind = "super";
+        } else if (s instanceof NameExpr || s instanceof MethodCallExpr || s instanceof FieldAccessExpr
+                || s instanceof ObjectCreationExpr) {
+            ex.receiverKind = "expr";
+            ex.receiverNode = s; // linked to an expression id once the whole body is walked
+        } else if (s instanceof CastExpr c) {
+            ex.receiverKind = "cast";
+            ex.receiverType = c.getType().asString();
+        } else {
+            Model.ValueHint h = hint(s);
+            if (h.kind().equals("literal")) {
+                ex.receiverKind = "literal";
+                ex.receiverType = h.type();
+            } else {
+                ex.receiverKind = "other";
+            }
+        }
+    }
+
+    private static Expression unwrap(Expression e) {
+        while (e instanceof EnclosedExpr en) e = en.getInner();
+        return e;
+    }
+
+    private void setArgs(Ex ex, List<Expression> args) {
+        List<Model.ValueHint> out = new ArrayList<>();
+        for (int i = 0; i < args.size(); i++) {
+            Model.ValueHint h = hint(args.get(i));
+            out.add(h);
+            if (h.kind().equals("expr")) {
+                pendingHints.add(new PendingHint(ex, i, unwrap(args.get(i))));
+            }
+        }
+        ex.args = out;
+    }
+
+    private static Model.ValueHint hint(Expression raw) {
+        Expression e = unwrap(raw);
+        if (e instanceof NullLiteralExpr) return new Model.ValueHint("literal", "null", null);
+        if (e instanceof StringLiteralExpr || e instanceof TextBlockLiteralExpr) return new Model.ValueHint("literal", "String", null);
+        if (e instanceof IntegerLiteralExpr) return new Model.ValueHint("literal", "int", null);
+        if (e instanceof LongLiteralExpr) return new Model.ValueHint("literal", "long", null);
+        if (e instanceof CharLiteralExpr) return new Model.ValueHint("literal", "char", null);
+        if (e instanceof BooleanLiteralExpr) return new Model.ValueHint("literal", "boolean", null);
+        if (e instanceof DoubleLiteralExpr d) {
+            String v = d.getValue();
+            boolean isFloat = v.endsWith("f") || v.endsWith("F");
+            return new Model.ValueHint("literal", isFloat ? "float" : "double", null);
+        }
+        if (e instanceof UnaryExpr u && (u.getOperator() == UnaryExpr.Operator.MINUS
+                || u.getOperator() == UnaryExpr.Operator.PLUS)) {
+            Model.ValueHint inner = hint(u.getExpression());
+            if (inner.kind().equals("literal") && !inner.type().equals("String") && !inner.type().equals("null")
+                    && !inner.type().equals("boolean") && !inner.type().equals("char")) {
+                return inner;
+            }
+            return new Model.ValueHint("other", null, null);
+        }
+        if (e instanceof NameExpr n) return new Model.ValueHint("name", null, n.getNameAsString());
+        if (e instanceof ObjectCreationExpr o) return new Model.ValueHint("new", o.getType().asString(), null);
+        if (e instanceof CastExpr c) return new Model.ValueHint("cast", c.getType().asString(), null);
+        if (e instanceof ThisExpr t && t.getTypeName().isEmpty()) return new Model.ValueHint("this", null, null);
+        if (e instanceof ClassExpr) return new Model.ValueHint("literal", "Class", null);
+        if (e instanceof MethodCallExpr || e instanceof FieldAccessExpr) {
+            return new Model.ValueHint("expr", null, null); // linked to an expression id later
+        }
+        return new Model.ValueHint("other", null, null);
+    }
+
+    /** Last line on which a local variable declared by `decl` is visible. */
+    private static int declarationScopeEnd(VariableDeclarationExpr decl) {
+        Node parent = decl.getParentNode().orElse(null);
+        if (parent instanceof ForEachStmt || parent instanceof ForStmt || parent instanceof TryStmt) {
+            return line(parent, false);
+        }
+        return enclosingBlockEnd(decl);
+    }
+
+    private static int enclosingBlockEnd(Node from) {
+        Node n = from.getParentNode().orElse(null);
+        while (n != null) {
+            if (n instanceof BlockStmt) return line(n, false);
+            if (n instanceof SwitchEntry se) {
+                // a declaration in an old-style case group is visible to the rest of the switch block
+                return se.getParentNode().map(sw -> line(sw, false)).orElse(line(se, false));
+            }
+            if (n instanceof CallableDeclaration<?> || n instanceof LambdaExpr) return line(n, false);
+            n = n.getParentNode().orElse(null);
+        }
+        return line(from, false);
+    }
+
+    // ---- builders ----------------------------------------------------------------------------
+
+    private Ex add(String kind, Node n, Integer stmt, String name, String scope, String type,
+                   Integer argCount, String operator, List<String> tags) {
+        Ex ex = new Ex();
+        ex.id = nextExpressionId++;
+        ex.statementId = stmt;
+        ex.kind = kind;
+        ex.startLine = line(n, true);
+        ex.endLine = line(n, false);
+        ex.text = clipExpr(n);
+        ex.name = name;
+        ex.scope = scope;
+        ex.type = type;
+        ex.argCount = argCount;
+        ex.operator = operator;
+        ex.tags.addAll(tags);
+        if (localClassDepth > 0) ex.tags.add("in_local_class");
+        exprs.add(ex);
+        exprIds.put(n, ex.id);
+        return ex;
     }
 
     private static boolean isIncDec(UnaryExpr u) {

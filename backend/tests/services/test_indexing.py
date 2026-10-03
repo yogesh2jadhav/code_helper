@@ -155,3 +155,36 @@ def test_stored_analysis_round_trips(settings: Settings, repo: Path) -> None:
 def test_missing_root_is_a_clear_error(settings: Settings) -> None:
     with pytest.raises(ValueError, match="SOURCE_ROOT"):
         IndexingService(settings, FakeAnalyzer()).index(None)
+
+
+def test_results_from_an_older_ast_schema_are_reanalyzed(settings: Settings, repo: Path) -> None:
+    import sqlite3
+    from contextlib import closing
+
+    analyzer = FakeAnalyzer()
+    service = IndexingService(settings, analyzer)
+    service.index(repo)
+    analyzer.calls.clear()
+
+    with closing(sqlite3.connect(settings.db_path)) as conn, conn:
+        conn.execute("UPDATE file_analysis SET schema_version = 1")  # as if written by old analyzer
+    summary = service.index(repo)
+    assert (summary.analyzed, summary.up_to_date) == (5, 0)  # nothing is trusted, all redone
+    assert service.index(repo).analyzed == 0  # and the new results are current
+
+
+def test_database_created_before_schema_versioning_is_migrated(tmp_path: Path) -> None:
+    import sqlite3
+    from contextlib import closing
+
+    db = tmp_path / "old.sqlite3"
+    with closing(sqlite3.connect(db)) as conn, conn:
+        conn.executescript(
+            "CREATE TABLE file_analysis (file_id TEXT PRIMARY KEY, repository_id TEXT NOT NULL,"
+            " hash TEXT NOT NULL, status TEXT NOT NULL, errors TEXT NOT NULL, ast_json TEXT NOT NULL,"
+            " analyzed_at TEXT NOT NULL);"
+            "INSERT INTO file_analysis VALUES ('f', 'r', 'h', 'ok', '[]', '{}', 'now');"
+        )
+    store = AnalysisStore(db)  # must add the column rather than crash
+    assert store.states("r") == {}  # the legacy row is treated as stale
+    assert store.count("r") == 1  # ...but not silently dropped

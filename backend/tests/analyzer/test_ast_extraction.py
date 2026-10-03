@@ -90,8 +90,9 @@ def test_expression_kinds_in_simple_method(parsed: dict[str, ParsedFile]) -> Non
     assert [(e.kind, e.name, e.scope) for e in ctor.expressions if e.kind == "field_access"] == [
         ("field_access", "currency", "this")]
     with_tax = method(t, "withTax")
-    (call,) = with_tax.expressions
+    (call,) = [e for e in with_tax.expressions if e.kind == "method_call"]
     assert (call.kind, call.name, call.scope, call.arg_count) == ("method_call", "applyRate", None, 2)
+    assert [e.name for e in with_tax.expressions if e.kind == "name_ref"] == ["amount", "TAX_RATE"]
 
 
 # ---- Fixture B: branches ----------------------------------------------------------------------
@@ -198,7 +199,8 @@ def test_classic_switch_with_fallthrough(parsed: dict[str, ParsedFile]) -> None:
 
 def test_switch_expression(parsed: dict[str, ParsedFile]) -> None:
     m = method(only_type(parsed, "switches/SwitchSamples.java"), "modernLabel")
-    assert [e.kind for e in m.expressions] == ["switch_expr"]
+    assert [e.kind for e in m.expressions if e.kind != "name_ref"] == ["switch_expr"]
+    assert [e.name for e in m.expressions if e.kind == "name_ref"] == ["level"]
     assert kinds(m) == ["return", "case", "case", "default"]
     assert m.cyclomatic_complexity == 3 and m.max_nesting_depth == 1
 
@@ -250,7 +252,9 @@ def test_anonymous_class_body_is_part_of_enclosing_method(parsed: dict[str, Pars
     run = method(only_type(parsed, "types/TypeZoo.java", "TypeZoo"), "run")
     (creation,) = [e for e in run.expressions if e.kind == "object_creation"]
     assert creation.tags == ["anonymous_class"]
-    assert calls(run, "println") == [[]]  # call inside the anonymous class is still seen
+    # the call inside the anonymous class is still seen, and marked as living in a local class
+    assert calls(run, "println") == [["in_local_class"]]
+    assert "in_local_class" not in creation.tags
 
 
 def test_nested_interface_enum_record_annotation(parsed: dict[str, ParsedFile]) -> None:
@@ -300,8 +304,10 @@ def test_zero_comment_fixture_still_yields_full_structure(parsed: dict[str, Pars
     assert calls(m, "map") == [["stream_op"]]
     assert calls(m, "stream") == [["stream_source"], ["stream_source"]]  # kept.stream(), entrySet().stream()
     assert calls(m, "entrySet") == [[]]
-    assert sorted(e.name or "" for e in m.expressions if e.kind == "variable_declaration") == [
-        "byAccount", "kept", "row"]
+    declared = {e.name: e.tags for e in m.expressions if e.kind == "variable_declaration"}
+    assert sorted(declared) == ["byAccount", "e", "kept", "row", "s"]
+    assert declared["row"] == ["foreach"]
+    assert declared["e"] == declared["s"] == ["lambda_param"]  # lambda params are declarations too
     assert [e.tags for e in m.expressions if e.kind == "lambda"] == [[], ["predicate"]]
 
 
