@@ -343,6 +343,27 @@ def source(
     )
 
 
+@router.get("/repositories/{repository_id}/source")
+def source_by_path(
+    repository_id: str,
+    path: str = Query(..., min_length=1),
+    start: int | None = Query(None, ge=1),
+    end: int | None = Query(None, ge=1),
+    settings: Settings = Depends(get_settings),
+) -> SourceView:
+    """Source by repository-relative path (what citations carry). Cannot leave the repository."""
+    scan = ScanStore(settings.db_path)
+    root = scan.repository_root(repository_id)
+    if root is None:
+        raise HTTPException(status_code=404, detail="unknown repository")
+    record = next(
+        (f for f in scan.known_files(repository_id).values() if f.relative_path == path), None
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="no such scanned file")
+    return source(record.id, start, end, settings)
+
+
 class LLMStatus(BaseModel):
     model: str
     reachable: bool

@@ -317,6 +317,28 @@ def test_source_viewer(api: Api) -> None:
     )
 
 
+def test_source_by_repository_relative_path(api: Api) -> None:
+    ok = api.get(
+        f"/api/repositories/{api.repo}/source",
+        params={"path": "src/main/shop/InvoicePrinter.java", "start": 4, "end": 4},
+    )
+    assert (
+        ok.status_code == 200
+        and ok.json()["text"] == "    public String render(String customer, double total) {"
+    )
+    assert (
+        api.get(
+            f"/api/repositories/{api.repo}/source", params={"path": "../../etc/passwd"}
+        ).status_code
+        == 404
+    )
+    assert (
+        api.get(f"/api/repositories/{api.repo}/source", params={"path": "README.md"}).status_code
+        == 404
+    )  # not a scanned .java file
+    assert api.get("/api/repositories/nope/source", params={"path": "x"}).status_code == 404
+
+
 def test_source_for_a_deleted_file_is_404(api: Api) -> None:
     files = api.get(f"/api/repositories/{api.repo}/files").json()["files"]
     inv = next(f for f in files if f["relative_path"].endswith("InvoicePrinter.java"))
