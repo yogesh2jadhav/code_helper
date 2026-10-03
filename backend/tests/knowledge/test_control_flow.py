@@ -9,36 +9,18 @@ import pytest
 from app.analyzer import JavaParserAnalyzer
 from app.analyzer.control_flow import ControlFlow, FlowNode, build_control_flow, render_outline
 from tests.conftest import FIXTURES
-from tests.helpers import Analysis, analyze_paths, analyze_sources
+from tests.helpers import Analysis, ByMethod, analyze_paths, analyze_sources
 
 PREFIX = "com.example.fixtures"
 
 
-class Flows:
-    """Control flow for every method of an analysis, looked up by `Class#signature` suffix."""
+def _build(method, method_id, refs, _params):  # type: ignore[no-untyped-def]
+    return build_control_flow(method, method_id, refs)
 
+
+class Flows(ByMethod[ControlFlow]):
     def __init__(self, analysis: Analysis) -> None:
-        asts = {}
-        for f in analysis.files:
-            stack = list(f.parsed.types)
-            while stack:
-                t = stack.pop()
-                stack.extend(t.nested_types)
-                for m in [*t.methods, *t.constructors]:
-                    asts[(t.qualified_name, m.signature)] = m
-        self.flows: dict[str, ControlFlow] = {}
-        for fr in analysis.resolutions:
-            for cr in fr.classes:
-                for mr in cr.methods:
-                    refs = {r.expression_id: r for r in mr.refs}
-                    self.flows[mr.method_id] = build_control_flow(
-                        asts[(cr.fqn, mr.signature)], mr.method_id, refs
-                    )
-
-    def __call__(self, suffix: str) -> ControlFlow:
-        matches = [f for k, f in self.flows.items() if k.endswith(suffix)]
-        assert len(matches) == 1, f"{suffix}: {len(matches)} matches"
-        return matches[0]
+        super().__init__(analysis, _build)
 
 
 @pytest.fixture(scope="module")

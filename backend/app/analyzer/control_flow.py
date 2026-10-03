@@ -19,35 +19,89 @@ from app.analyzer.mutators import is_mutator
 from app.analyzer.resolution_models import Origin, Resolution, ResolutionStatus
 
 FlowKind = Literal[
-    "if", "else_if", "else", "loop", "switch", "case", "default", "try", "catch", "finally",
-    "return", "throw", "break", "continue", "stream", "mutation", "call",
-]  # fmt: skip
+    "if",
+    "else_if",
+    "else",
+    "loop",
+    "switch",
+    "case",
+    "default",
+    "try",
+    "catch",
+    "finally",
+    "return",
+    "throw",
+    "break",
+    "continue",
+    "stream",
+    "mutation",
+    "call",
+]
 
 _STATEMENT_KIND: dict[str, str] = {
-    "for": "loop", "foreach": "loop", "while": "loop", "do": "loop",
-}  # fmt: skip
+    "for": "loop",
+    "foreach": "loop",
+    "while": "loop",
+    "do": "loop",
+}
 
 STREAM_CATEGORY: dict[str, str] = {
-    "stream": "source", "parallelStream": "source", "of": "source", "range": "source",
-    "rangeClosed": "source", "iterate": "source", "generate": "source",
-    "filter": "filter", "takeWhile": "filter", "dropWhile": "filter", "distinct": "filter",
-    "limit": "filter", "skip": "filter",
-    "map": "map", "mapToInt": "map", "mapToLong": "map", "mapToDouble": "map", "mapToObj": "map",
-    "flatMap": "map", "boxed": "map", "peek": "map",
+    "stream": "source",
+    "parallelStream": "source",
+    "of": "source",
+    "range": "source",
+    "rangeClosed": "source",
+    "iterate": "source",
+    "generate": "source",
+    "filter": "filter",
+    "takeWhile": "filter",
+    "dropWhile": "filter",
+    "distinct": "filter",
+    "limit": "filter",
+    "skip": "filter",
+    "map": "map",
+    "mapToInt": "map",
+    "mapToLong": "map",
+    "mapToDouble": "map",
+    "mapToObj": "map",
+    "flatMap": "map",
+    "boxed": "map",
+    "peek": "map",
     "sorted": "sort",
-    "collect": "collect", "toList": "collect", "toArray": "collect",
-    "count": "aggregate", "sum": "aggregate", "min": "aggregate", "max": "aggregate",
-    "average": "aggregate", "reduce": "aggregate", "summaryStatistics": "aggregate",
-    "anyMatch": "match", "allMatch": "match", "noneMatch": "match",
-    "findFirst": "find", "findAny": "find",
-    "forEach": "consume", "forEachOrdered": "consume",
-}  # fmt: skip
+    "collect": "collect",
+    "toList": "collect",
+    "toArray": "collect",
+    "count": "aggregate",
+    "sum": "aggregate",
+    "min": "aggregate",
+    "max": "aggregate",
+    "average": "aggregate",
+    "reduce": "aggregate",
+    "summaryStatistics": "aggregate",
+    "anyMatch": "match",
+    "allMatch": "match",
+    "noneMatch": "match",
+    "findFirst": "find",
+    "findAny": "find",
+    "forEach": "consume",
+    "forEachOrdered": "consume",
+}
 _GROUPING = {"groupingBy", "groupingByConcurrent", "partitioningBy"}
 _AGGREGATING = {
-    "counting", "summingInt", "summingLong", "summingDouble", "averagingInt", "averagingLong",
-    "averagingDouble", "minBy", "maxBy", "reducing", "summarizingInt", "summarizingLong",
+    "counting",
+    "summingInt",
+    "summingLong",
+    "summingDouble",
+    "averagingInt",
+    "averagingLong",
+    "averagingDouble",
+    "minBy",
+    "maxBy",
+    "reducing",
+    "summarizingInt",
+    "summarizingLong",
     "summarizingDouble",
-}  # fmt: skip
+}
 
 
 class CallSummary(BaseModel):
@@ -167,10 +221,14 @@ def build_control_flow(
                 owner.header_streams.append(terminal[1])
                 continue
             leaf = FlowNode(
-                kind="stream", start_line=e.start_line, end_line=e.end_line,
-                start_column=e.start_column, text=e.text, stream=terminal[1],
+                kind="stream",
+                start_line=e.start_line,
+                end_line=e.end_line,
+                start_column=e.start_column,
+                text=e.text,
+                stream=terminal[1],
                 in_lambda=_in_ranges(e, lambdas),
-            )  # fmt: skip
+            )
         elif is_header:
             if e.kind != "assignment" and owner is not None:
                 summary = _call_summary(e, refs)
@@ -185,21 +243,31 @@ def build_control_flow(
             if mutated is not None:  # `list.add(x)`, `dto.setName(y)`: the receiver changes
                 receiver, receiver_ref = mutated
                 leaf = FlowNode(
-                    kind="mutation", start_line=e.start_line, end_line=e.end_line,
-                    start_column=e.start_column, text=e.text, target=receiver.text,
-                    target_kind=receiver_ref.kind if receiver_ref else None, operator=e.name,
-                    callee=summary, in_lambda=_in_ranges(e, lambdas),
-                )  # fmt: skip
+                    kind="mutation",
+                    start_line=e.start_line,
+                    end_line=e.end_line,
+                    start_column=e.start_column,
+                    text=e.text,
+                    target=receiver.text,
+                    target_kind=receiver_ref.kind if receiver_ref else None,
+                    operator=e.name,
+                    callee=summary,
+                    in_lambda=_in_ranges(e, lambdas),
+                )
             elif summary is None or not (
                 summary.callee_id or summary.candidates
             ):  # keep project and ambiguous calls; external/unresolved live in the call graph
                 continue
             else:
                 leaf = FlowNode(
-                    kind="call", start_line=e.start_line, end_line=e.end_line,
-                    start_column=e.start_column, text=e.text, callee=summary,
+                    kind="call",
+                    start_line=e.start_line,
+                    end_line=e.end_line,
+                    start_column=e.start_column,
+                    text=e.text,
+                    callee=summary,
                     in_lambda=_in_ranges(e, lambdas),
-                )  # fmt: skip
+                )
         if owner is None:
             roots.append(leaf)
         else:
@@ -217,9 +285,12 @@ def _statement_node(s: Statement) -> FlowNode:
     kind = _STATEMENT_KIND.get(s.kind, s.kind)
     return FlowNode(
         kind=kind,  # type: ignore[arg-type]
-        start_line=s.start_line, end_line=s.end_line, start_column=s.start_column, text=s.text,
+        start_line=s.start_line,
+        end_line=s.end_line,
+        start_column=s.start_column,
+        text=s.text,
         loop_kind=s.kind if kind == "loop" else None,
-    )  # fmt: skip
+    )
 
 
 def _place(parent: FlowNode, node: FlowNode) -> None:
@@ -337,19 +408,21 @@ def _pipeline(
         first.scope if first.name in ("stream", "parallelStream") and first.scope else first.text
     )
     collectors = [
-        e for e in exprs
+        e
+        for e in exprs
         if e.kind == "method_call" and "collector" in e.tags and terminal.range.contains(e.range)
-    ]  # fmt: skip
+    ]
     chain_ids = {c.id for c in chain} | {c.id for c in collectors}
     ops = [_op(c, collectors) for c in chain]
     calls = [
-        s for e in exprs
+        s
+        for e in exprs
         if e.kind in ("method_call", "object_creation")
         and e.id not in chain_ids
         and terminal.range.contains(e.range)
         and (s := _call_summary(e, refs)) is not None
         and (s.callee_id or s.candidates)
-    ]  # fmt: skip
+    ]
     return StreamPipeline(source=source or "", ops=ops, text=terminal.text, calls=calls)
 
 
