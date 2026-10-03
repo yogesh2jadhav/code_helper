@@ -14,7 +14,8 @@ from pathlib import Path
 from app.analyzer.base import AnalyzerUnavailableError
 from app.config import get_settings
 from app.logging_setup import configure_logging
-from app.services.indexing_service import IndexingService, Progress, ProgressFn
+from app.services.indexing_service import Progress, ProgressFn
+from app.services.pipeline_service import PipelineService
 from app.services.repository_service import RepositoryService
 from app.services.resolution_service import NotIndexedError, ResolutionService
 
@@ -44,6 +45,11 @@ def build_parser() -> argparse.ArgumentParser:
     index.add_argument("path", nargs="?", type=Path, help="repository root (default: SOURCE_ROOT)")
     index.add_argument("--force", action="store_true", help="re-analyze every file")
     index.add_argument("--batch-size", type=int, help="files per analyzer call (default: config)")
+    index.add_argument(
+        "--no-knowledge",
+        action="store_true",
+        help="stop after analysis; skip building the knowledge model",
+    )
 
     resolve = sub.add_parser(
         "resolve", help="resolve symbols over the indexed repository and report the outcome"
@@ -87,10 +93,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(report, indent=2))
             return 0
 
-        result = IndexingService(settings).index(
+        result = PipelineService(settings).run(
             args.path,
             force=args.force,
             batch_size=args.batch_size,
+            knowledge=not args.no_knowledge,
             on_progress=_progress_printer(),
         )
     except (ValueError, NotADirectoryError) as exc:
@@ -104,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     print(result.model_dump_json(indent=2))
-    return 1 if result.analyzer_errors else 0
+    return 1 if result.index.analyzer_errors else 0
 
 
 if __name__ == "__main__":

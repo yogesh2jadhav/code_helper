@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.scanner.models import Repository, ScanSummary, SourceFile
 from app.services.indexing_service import IndexingService
 from app.services.jobs import Job, JobAlreadyRunningError, get_job_manager
+from app.services.pipeline_service import PipelineService
 from app.services.repository_service import RepositoryService
 
 router = APIRouter(prefix="/api/repositories")
@@ -45,9 +46,12 @@ def scan(request: ScanRequest) -> ScanSummary:
 def start_index(request: IndexRequest) -> Job:
     """Start indexing in the background and return a job to poll at GET /api/jobs/{id}."""
     settings = get_settings()
-    service = IndexingService(settings)
     try:
-        root = service.resolve_root(Path(request.path) if request.path else None).expanduser()
+        root = (
+            IndexingService(settings)
+            .resolve_root(Path(request.path) if request.path else None)
+            .expanduser()
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     root = root.resolve()
@@ -57,8 +61,11 @@ def start_index(request: IndexRequest) -> Job:
         return get_job_manager().submit(
             "index",
             str(root),
-            lambda progress: service.index(
-                root, force=request.force, batch_size=request.batch_size, on_progress=progress
+            lambda progress: PipelineService(settings).run(
+                root,
+                force=request.force,
+                batch_size=request.batch_size,
+                on_progress=progress,
             ),
         )
     except JobAlreadyRunningError as exc:

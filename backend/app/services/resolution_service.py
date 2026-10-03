@@ -39,6 +39,8 @@ class ResolutionRun:
     resolutions: list[FileResolution]
     summary: ResolutionSummary
     duration_ms: int
+    table: SymbolTable
+    resolver: SymbolResolver
 
 
 class ResolutionService:
@@ -63,7 +65,8 @@ class ResolutionService:
                 f"no analysis stored for {target}; run `index` first (or re-run it after upgrading,"
                 " since older analysis results are re-generated automatically)"
             )
-        resolver = SymbolResolver(SymbolTable(files))
+        table = SymbolTable(files)
+        resolver = SymbolResolver(table)
         resolutions = resolver.resolve_all(files)
         return ResolutionRun(
             repo_id,
@@ -71,6 +74,8 @@ class ResolutionService:
             resolutions,
             resolver.summarize(resolutions),
             int((time.monotonic() - started) * 1000),
+            table,
+            resolver,
         )
 
     @staticmethod

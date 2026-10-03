@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 from app.cli import main as cli_main
 from app.config import Settings
 from app.main import create_app
-from app.services.indexing_service import IndexSummary
 from app.services.jobs import get_job_manager
+from app.services.pipeline_service import PipelineSummary
 from tests.conftest import FIXTURES
 
 
@@ -46,13 +46,16 @@ def test_index_runs_in_background_and_is_incremental(client: TestClient) -> None
     job = wait_for_job(client, response.json()["id"])
     assert job["state"] == "succeeded", job
     assert (job["done"], job["total"]) == (8, 8)
-    result = job["result"]
+    result = job["result"]["index"]
     assert (result["ok"], result["parse_errors"], result["analyzer_errors"]) == (7, 1, 0)
+    knowledge = job["result"]["knowledge"]
+    assert knowledge["skipped"] is False and knowledge["stats"]["classes"] > 0
 
     again = wait_for_job(
         client, client.post("/api/repositories/index", json={"path": str(FIXTURES)}).json()["id"]
     )
-    assert (again["result"]["analyzed"], again["result"]["up_to_date"]) == (0, 8)
+    assert (again["result"]["index"]["analyzed"], again["result"]["index"]["up_to_date"]) == (0, 8)
+    assert again["result"]["knowledge"]["skipped"] is True  # nothing changed, so nothing rebuilt
     assert len(client.get("/api/jobs").json()) == 2
 
 
@@ -69,7 +72,7 @@ def test_file_listing_is_paginated(client: TestClient) -> None:
 def test_second_index_while_one_is_running_gets_409(client: TestClient) -> None:
     release = threading.Event()
 
-    def blocking(_p: object) -> IndexSummary:
+    def blocking(_p: object) -> PipelineSummary:
         release.wait(10)
         raise RuntimeError("released")
 

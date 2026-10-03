@@ -16,7 +16,8 @@ from functools import lru_cache
 
 from pydantic import BaseModel
 
-from app.services.indexing_service import IndexSummary, Progress, ProgressFn
+from app.services.indexing_service import Progress, ProgressFn
+from app.services.pipeline_service import PipelineSummary
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class Job(BaseModel):
     done: int = 0
     total: int = 0
     error: str | None = None
-    result: IndexSummary | None = None
+    result: PipelineSummary | None = None
     created_at: datetime
     finished_at: datetime | None = None
 
@@ -53,7 +54,7 @@ class JobManager:
         self._jobs: dict[str, Job] = {}
         self._threads: dict[str, threading.Thread] = {}
 
-    def submit(self, kind: str, root: str, work: Callable[[ProgressFn], IndexSummary]) -> Job:
+    def submit(self, kind: str, root: str, work: Callable[[ProgressFn], PipelineSummary]) -> Job:
         """Start `work` on a background thread. One running job per repository root."""
         with self._lock:
             for existing in self._jobs.values():
@@ -98,7 +99,7 @@ class JobManager:
             for key, value in fields.items():
                 setattr(job, key, value)
 
-    def _run(self, job_id: str, work: Callable[[ProgressFn], IndexSummary]) -> None:
+    def _run(self, job_id: str, work: Callable[[ProgressFn], PipelineSummary]) -> None:
         def on_progress(p: Progress) -> None:
             self._update(job_id, stage=p.stage, done=p.done, total=p.total)
 
@@ -117,6 +118,8 @@ class JobManager:
                 job_id,
                 state=JobState.SUCCEEDED,
                 stage="done",
+                done=result.index.total_files,
+                total=result.index.total_files,
                 result=result,
                 finished_at=datetime.now(UTC),
             )

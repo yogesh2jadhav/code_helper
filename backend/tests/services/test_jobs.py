@@ -7,9 +7,10 @@ import pytest
 from app.scanner.models import ScanSummary
 from app.services.indexing_service import IndexSummary, Progress, ProgressFn
 from app.services.jobs import JobAlreadyRunningError, JobManager, JobState
+from app.services.pipeline_service import PipelineSummary
 
 
-def dummy_summary() -> IndexSummary:
+def dummy_summary() -> PipelineSummary:
     scan = ScanSummary(
         repository_id="r",
         root="/x",
@@ -22,7 +23,7 @@ def dummy_summary() -> IndexSummary:
         ignored_dirs=0,
         duration_ms=1,
     )
-    return IndexSummary(
+    index = IndexSummary(
         repository_id="r",
         root="/x",
         total_files=1,
@@ -35,12 +36,13 @@ def dummy_summary() -> IndexSummary:
         duration_ms=1,
         scan=scan,
     )
+    return PipelineSummary(index=index)
 
 
 def test_successful_job_reports_progress_and_result() -> None:
     manager = JobManager()
 
-    def work(progress: ProgressFn) -> IndexSummary:
+    def work(progress: ProgressFn) -> PipelineSummary:
         progress(Progress("analyze", 3, 10))
         return dummy_summary()
 
@@ -49,14 +51,14 @@ def test_successful_job_reports_progress_and_result() -> None:
     done = manager.get(job.id)
     assert done is not None
     assert done.state is JobState.SUCCEEDED and done.result is not None
-    assert (done.stage, done.done, done.total) == ("done", 3, 10)
+    assert (done.stage, done.done, done.total) == ("done", 1, 1)  # files processed, from the result
     assert done.finished_at is not None and done.error is None
 
 
 def test_failed_job_records_the_error() -> None:
     manager = JobManager()
 
-    def work(_p: ProgressFn) -> IndexSummary:
+    def work(_p: ProgressFn) -> PipelineSummary:
         raise RuntimeError("kaboom")
 
     job = manager.submit("index", "/repo", work)
@@ -70,7 +72,7 @@ def test_one_running_job_per_repository_root() -> None:
     manager = JobManager()
     release = threading.Event()
 
-    def blocking(_p: ProgressFn) -> IndexSummary:
+    def blocking(_p: ProgressFn) -> PipelineSummary:
         release.wait(5)
         return dummy_summary()
 
