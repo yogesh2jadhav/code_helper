@@ -82,13 +82,14 @@ def render_mentor_answer(plan: ExplanationPlan, note: str | None = None) -> str:
         for d in plan.dependencies:
             lines = f"L{', L'.join(map(str, d.lines))}"
             detail = f": {d.purpose}" if d.purpose else (f" ({d.note})" if d.note else "")
-            out.append(f"- {d.name} [{d.kind}] at {lines}{detail}")
+            out.append(f"- {d.name} [{d.kind}] at {lines}{detail}{_cites(d.refs)}")
     else:
         out.append("It does not call other methods that the analysis could identify.")
     out.append("")
 
     # 7. output
-    out += [f"## {heads['Output']}", "", *(f"- {o}" for o in plan.output_summary), ""]
+    refs = _cites(plan.output_refs)
+    out += [f"## {heads['Output']}", "", *(f"- {o}{refs}" for o in plan.output_summary), ""]
 
     # 8. careful
     out += [f"## {heads['What to be careful about']}", ""]

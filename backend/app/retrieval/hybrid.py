@@ -88,6 +88,14 @@ class HybridRetriever:
             symbol_id=symbol_id,
         )
         if not allowed:
+            log_event(
+                logger,
+                "retrieval_completed",
+                repository=repository_id,
+                hits=0,
+                degraded=False,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
             return SearchResult(query=query, hits=[])
 
         bm25 = self.bm25_for(repository_id).search(query, n, allowed)

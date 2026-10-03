@@ -61,6 +61,7 @@ class Dependency(BaseModel):
     lines: list[int] = Field(default_factory=list)
     kind: Literal["project", "ambiguous", "external"] = "project"
     note: str | None = None
+    refs: list[str] = Field(default_factory=list)
 
 
 class PlanPurpose(BaseModel):
@@ -76,6 +77,7 @@ class ExplanationPlan(BaseModel):
     purpose: PlanPurpose
     input_summary: list[str]
     output_summary: list[str]
+    output_refs: list[str] = Field(default_factory=list)
     major_stages: list[Stage]
     data_transformations: list[str]
     business_rule_candidates: list[RuleNote]
@@ -100,10 +102,11 @@ def build_plan(method: MethodKnowledge, citations: list[Citation] | None = None)
         purpose=_purpose(method, cite),
         input_summary=_inputs(method),
         output_summary=_outputs(method),
+        output_refs=_output_refs(method, cite),
         major_stages=stages,
         data_transformations=_chains(method),
         business_rule_candidates=_rules(method, cite),
-        dependencies=_dependencies(method),
+        dependencies=_dependencies(method, cite),
         historical_context=_history(method, cite),
         risks=[
             f"[{r.level}] {r.message}" + (f" (L{r.line})" if r.line else "") for r in method.risks
@@ -393,7 +396,12 @@ def _rules(m: MethodKnowledge, cite: _Cite) -> list[RuleNote]:
     ]
 
 
-def _dependencies(m: MethodKnowledge) -> list[Dependency]:
+def _output_refs(m: MethodKnowledge, cite: _Cite) -> list[str]:
+    lines = sorted({n.start_line for n in m.control_flow.walk() if n.kind == "return"})
+    return [cite.lines(n) for n in lines[:4]] or [cite.lines(m.start_line)]
+
+
+def _dependencies(m: MethodKnowledge, cite: _Cite) -> list[Dependency]:
     out: list[Dependency] = []
     externals: dict[str, list[int]] = {}
     for c in m.callees:
@@ -432,6 +440,8 @@ def _dependencies(m: MethodKnowledge) -> list[Dependency]:
                 note="library/JDK type; members not verified",
             )
         )
+    for dep in out:
+        dep.refs = [cite.lines(n) for n in dep.lines[:3]]
     return out
 
 

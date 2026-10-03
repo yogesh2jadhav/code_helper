@@ -104,6 +104,17 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--depth", type=int, default=2)
         if name == "why":
             p.add_argument("--lines", help="selection as START-END (default: the whole method)")
+
+    evaluate = sub.add_parser(
+        "evaluate", help="measure the system against a benchmark (each metric reported separately)"
+    )
+    evaluate.add_argument("benchmark", type=Path, help="benchmark directory (holds expected.json)")
+    evaluate.add_argument(
+        "--llm", action="store_true", help="also evaluate the language model's answers"
+    )
+    evaluate.add_argument(
+        "--json", action="store_true", dest="as_json", help="print JSON, not text"
+    )
     return parser
 
 
@@ -168,6 +179,9 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command in ("explain", "trace", "why"):
             return _run_explain(args, settings)
+
+        if args.command == "evaluate":
+            return _run_evaluate(args, settings)
 
         if args.command == "resolve":
             run = ResolutionService(settings).resolve(args.path)
@@ -276,6 +290,28 @@ def _run_explain(args: argparse.Namespace, settings: object) -> int:
     if result.llm_error:
         print(f"\n[llm] {result.llm_error}", file=sys.stderr)
     return 0
+
+
+def _run_evaluate(args: argparse.Namespace, settings: object) -> int:
+    from app.config import Settings
+    from app.evaluation.report import full_report, to_json
+    from app.evaluation.runner import run_benchmark
+
+    assert isinstance(settings, Settings)
+    llm = (
+        OllamaClient(
+            settings.ollama_base_url,
+            settings.ollama_chat_model,
+            timeout=settings.ollama_timeout_seconds,
+            temperature=settings.temperature,
+            context_window=settings.context_window,
+        )
+        if args.llm
+        else None
+    )
+    run = run_benchmark(args.benchmark, settings, llm, use_llm=args.llm)
+    print(to_json(run) if args.as_json else full_report(run))
+    return 1 if run.not_found else 0
 
 
 if __name__ == "__main__":

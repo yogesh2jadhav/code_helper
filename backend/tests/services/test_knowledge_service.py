@@ -146,3 +146,15 @@ def test_cli_index_builds_knowledge_and_can_skip_it(
 
     assert cli_main(["index", str(repo), "--no-knowledge", "--force"]) == 0
     assert json.loads(capsys.readouterr().out)["knowledge"] is None
+
+
+def test_a_malformed_file_does_not_fail_the_repository(
+    isolated_settings: Settings, java_analyzer: object, repo: Path
+) -> None:
+    (repo / "src/main/p/Broken.java").write_text("package p; public class Broken { int x( {{ \n")
+    summary = PipelineService(isolated_settings).run(repo)
+    assert summary.index.parse_errors == 1
+    assert summary.knowledge is not None and summary.knowledge.stats.methods == 2
+    store = KnowledgeStore(isolated_settings.db_path)
+    names = {m.name for m in store.iter_methods(repository_id_for(repo.resolve()))}
+    assert {"add", "use"} <= names

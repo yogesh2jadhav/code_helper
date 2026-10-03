@@ -1,0 +1,245 @@
+{
+  "name": "enterprise",
+  "source": "src/main/java",
+  "description": "Synthetic enterprise-style billing code, zero comments, one long method with nested conditions, loops, a stream, helper calls and unexplained constants (spec Phase 21).",
+  "methods": [
+    {
+      "method": "ledgerco.billing.BatchBiller#bill(Account,List<Shipment>,boolean,double)",
+      "note": "long method; no comments; several magic numbers",
+      "purpose": {
+        "mentions": [
+          "bill"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "Account account",
+        "List<Shipment> shipments",
+        "boolean rush",
+        "double creditCeiling"
+      ],
+      "output": "double",
+      "stages": [
+        "loop",
+        "stream",
+        "loop",
+        "if",
+        "if",
+        "call",
+        "return"
+      ],
+      "rules": [
+        {
+          "kind": "threshold",
+          "literal": "0"
+        },
+        {
+          "kind": "threshold",
+          "literal": "3"
+        },
+        {
+          "kind": "threshold",
+          "literal": "4"
+        },
+        {
+          "kind": "threshold",
+          "literal": "14"
+        },
+        {
+          "kind": "threshold",
+          "literal": "25000"
+        },
+        {
+          "kind": "filter",
+          "contains": "getAmount"
+        },
+        {
+          "kind": "grouping"
+        },
+        {
+          "kind": "aggregation"
+        },
+        {
+          "kind": "comparison",
+          "contains": "creditCeiling"
+        }
+      ],
+      "dependencies": [
+        "RateTable.baseRate",
+        "RateTable.surcharge",
+        "TaxPolicy.taxFor",
+        "Account.addExposure",
+        "Account.getTier",
+        "Account.getExposure",
+        "Shipment.getWeight",
+        "Shipment.getZone",
+        "Shipment.getPriority",
+        "Shipment.isFragile",
+        "Shipment.getId",
+        "Charge.getAmount",
+        "Charge.getZone",
+        "Charge.Charge",
+        "ArrayList.ArrayList",
+        "List.add",
+        "List.stream",
+        "Collectors.groupingBy",
+        "Collectors.summingDouble",
+        "Map.entrySet",
+        "Entry.getValue",
+        "Entry.getKey"
+      ],
+      "data_flow": [
+        [
+          "shipments",
+          "s"
+        ],
+        [
+          "s",
+          "base"
+        ],
+        [
+          "charges",
+          "perZone"
+        ],
+        [
+          "perZone",
+          "entry"
+        ],
+        [
+          "entry",
+          "subtotal"
+        ],
+        [
+          "subtotal",
+          "total"
+        ],
+        [
+          "tax",
+          "total"
+        ],
+        [
+          "creditCeiling",
+          "total"
+        ],
+        [
+          "total",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "no comment states the purpose",
+        "why 25000 was chosen",
+        "why 14 was chosen",
+        "why 4 was chosen",
+        "why 3 was chosen"
+      ]
+    },
+    {
+      "method": "ledgerco.billing.RateTable#baseRate(String,double)",
+      "note": "two tiers separated by an unexplained weight",
+      "purpose": {
+        "mentions": [
+          "base rate"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "String zone",
+        "double weight"
+      ],
+      "output": "double",
+      "stages": [
+        "if",
+        "return"
+      ],
+      "rules": [
+        {
+          "kind": "threshold",
+          "literal": "120"
+        }
+      ],
+      "data_flow": [
+        [
+          "weight",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "why 120 was chosen"
+      ]
+    },
+    {
+      "method": "ledgerco.billing.RateTable#surcharge(int)",
+      "note": "ternary threshold with a magic surcharge",
+      "purpose": {
+        "mentions": [
+          "surcharge"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "int priority"
+      ],
+      "output": "double",
+      "stages": [
+        "return"
+      ],
+      "rules": [
+        {
+          "kind": "threshold",
+          "literal": "7"
+        }
+      ],
+      "data_flow": [
+        [
+          "priority",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "why 7 was chosen"
+      ]
+    },
+    {
+      "method": "ledgerco.billing.TaxPolicy#taxFor(String,double)",
+      "note": "a zone code treated as special",
+      "purpose": {
+        "mentions": [
+          "tax"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "String zone",
+        "double subtotal"
+      ],
+      "output": "double",
+      "stages": [
+        "if",
+        "return"
+      ],
+      "rules": [
+        {
+          "kind": "literal_match",
+          "literal": "\"N7\""
+        }
+      ],
+      "data_flow": [
+        [
+          "subtotal",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "why \"N7\" was chosen"
+      ],
+      "dependencies": [
+        "String.equals"
+      ]
+    }
+  ]
+}
