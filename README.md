@@ -15,9 +15,14 @@ scanned repository is only read.
 | 1 | Repository scanner with incremental scanning | done |
 | 2 | Java AST analysis (JavaParser, Java 17 sidecar) | done |
 | 3 | Symbol resolution (types, identifiers, fields, calls, constructors, overloads) | done |
-| 4+ | Call graph, control/data flow, rules, knowledge model, retrieval, Ollama, UI | planned |
+| 4–9 | Call graph, control flow, data flow, business-rule candidates, evidence, knowledge model | done |
+| 10–12 | Hybrid retrieval (BM25 + vectors), context builder, explanation plan | done |
+| 13–16 | Ollama client, prompts, response parser, explain / trace / why / follow-up chat | done |
+| 17–19 | REST API, Code Explorer UI, Knowledge Model UI | done |
+| 20–22 | Benchmark fixtures, enterprise fixture, evaluation framework | done |
+| 23–26 | Incremental analysis, logging, error handling, privacy | done (see [what is enforced](docs/phase-4-26-overview.md#phases-23-26)) |
 
-Design notes: [Phases 0–2 and the AST wire format](docs/phase-0-2.md), [Phase 3 symbol resolution](docs/phase-3-symbol-resolution.md).
+Design notes: [Phases 0–2 and the AST wire format](docs/phase-0-2.md), [Phase 3 symbol resolution](docs/phase-3-symbol-resolution.md), [Phases 4–26: knowledge engine, retrieval, LLM, UI, evaluation](docs/phase-4-26-overview.md).
 
 ## Requirements
 
@@ -83,7 +88,7 @@ macOS with Homebrew: `brew install uv openjdk@17 maven node`.
    make check
    ```
 
-   This runs ruff, mypy and pytest. Expect all green (133 tests).
+   This runs ruff, mypy and pytest. Expect all green (490+ tests).
 
 ## Run
 
@@ -148,6 +153,20 @@ example source locations for each reason. About 1 s for 1,700 files. Rules, the 
 the known limits are in [docs/phase-3-symbol-resolution.md](docs/phase-3-symbol-resolution.md).
 `resolve` exits with `4` if the repository has not been indexed yet.
 
+### Use the web UI
+
+`make backend` and `make frontend`, then open http://localhost:5173.
+
+- **Repository** page: start an index job (path, optional re-analyze), watch progress, see counts and
+  whether the local model is ready.
+- **Code Explorer**: class tree (filter, expand to methods) | source viewer (click a line, shift-click for
+  a range) | Developer Mentor with tabs *Explain*, *Trace Data*, *Business Rules* (plus "why does this
+  code do this?" for the selected lines), *Dependencies*, *Knowledge* (the raw model: purpose, inputs,
+  outputs, control flow, data flow, rules, callers/callees, risks, unknowns, evidence). Citations in
+  answers are links that jump to the cited source. Follow-up questions keep the method context.
+
+Frontend checks: `make frontend-test` (typecheck + vitest).
+
 ### Index through the REST API (background job)
 
 The API starts the same work in the background and returns immediately; poll the job for progress.
@@ -171,6 +190,58 @@ curl http://localhost:8000/api/jobs/<job-id>
 
 Jobs are held in memory and disappear when the server restarts; the indexing itself is resumable, so
 nothing but the progress display is lost.
+
+### Build the knowledge model (part of `index`)
+
+`index` now also builds the **knowledge model**: call graph, control flow, data flow, rule
+candidates, evidence (comments, Javadoc, tests, README/docs) and risks/unknowns per method. It is
+skipped when no file changed (fingerprint of the analyses), so re-indexing an unchanged repository is
+instant. `--no-knowledge` stops after the AST stage.
+
+### Search, explain, trace, why (CLI)
+
+```bash
+.venv/bin/python -m app.cli embed  --path /path/to/repo               # BM25 + embeddings (needs Ollama for vectors; --bm25-only otherwise)
+.venv/bin/python -m app.cli search "free shipping threshold" --path /path/to/repo
+.venv/bin/python -m app.cli explain ShippingCalculator.shippingFee --path /path/to/repo           # Developer Mentor answer
+.venv/bin/python -m app.cli explain ShippingCalculator.shippingFee --path /path/to/repo --no-llm  # analysis-only, no Ollama
+.venv/bin/python -m app.cli trace   ShippingCalculator.shippingFee --var fee --path /path/to/repo # where a value comes from / goes
+.venv/bin/python -m app.cli why     ShippingCalculator.shippingFee --lines 8-10 --path /path/to/repo
+```
+
+`explain`, `trace` and `why` need `index` first. They talk to Ollama (`OLLAMA_CHAT_MODEL`); if it is
+unreachable or the model is missing they print the analysis-only answer and say why. Answers carry
+citations such as `[E3]`; labels the model invents are removed and reported as warnings. Facts,
+inferences and "not established" statements are kept apart: the system will say *"the repository does
+not establish why 30 was chosen"* rather than invent a reason.
+
+### Evaluate quality
+
+```bash
+.venv/bin/python -m app.cli evaluate benchmarks/basic            # deterministic analysis
+.venv/bin/python -m app.cli evaluate benchmarks/enterprise
+.venv/bin/python -m app.cli evaluate benchmarks/basic --llm      # also score the model's answers
+```
+
+Each method is scored on purpose, structure, data flow, dependency and rule coverage, correctly
+stated unknowns, unsupported claims, hallucination rate and evidence coverage. They are reported
+separately; there is deliberately no single quality score. Details: [evaluation](docs/phase-4-26-overview.md#evaluation).
+
+### REST API
+
+Besides `/health` and the indexing endpoints above (`POST /api/repositories/index`,
+`GET /api/jobs/{id}`), the knowledge API serves the UI (interactive docs at `/docs`):
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/repositories`, `/{id}/stats`, `/{id}/classes`, `/{id}/methods?q=`, `/{id}/source?path=` | browsing |
+| `GET /api/classes/{id}`, `/api/classes/{id}/methods` | class and its methods |
+| `GET /api/methods/{id}`, `/knowledge`, `/rules`, `/callers`, `/callees` | method knowledge model |
+| `POST /api/methods/{id}/explain` `{depth, include_tests, include_docs, use_llm}` | mentor explanation, evidence, unknowns |
+| `POST /api/methods/{id}/trace` `{variable, depth, use_llm}` | data trace |
+| `POST /api/methods/{id}/why` `{start_line, end_line, use_llm}` | confirmed / likely / unknown |
+| `POST /api/conversations/{id}/messages` `{question}` | follow-up answer |
+| `GET /api/source/{file_id}?start=&end=`, `/api/llm/status` | source lines, Ollama readiness |
 
 ### Inspect the AST of one file
 
@@ -206,14 +277,18 @@ All settings come from environment variables or `.env`. Nothing machine-specific
 |---|---|---|
 | `SOURCE_ROOT` | empty | default repository to scan |
 | `DATA_ROOT` | `./data` | SQLite and index storage |
-| `CHROMA_PATH` | `$DATA_ROOT/indexes/chroma` | vector store (later phases) |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server (later phases) |
+| `CHROMA_PATH` | `$DATA_ROOT/indexes/chroma` | vector store |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server |
 | `OLLAMA_CHAT_MODEL` | `qwen2.5-coder:7b` | chat model, never hard-coded in code |
 | `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | embedding model |
 | `LOG_LEVEL` | `INFO` | log verbosity |
-| `MAX_CONTEXT_TOKENS` | `8000` | prompt budget (later phases) |
+| `MAX_CONTEXT_TOKENS` | `8000` | prompt context budget |
+| `CONTEXT_BUDGET_TARGET/CALLEES/FLOW/EVIDENCE` | `0.35/0.25/0.20/0.20` | how that budget is shared |
+| `EMBEDDING_PROVIDER` | `ollama` | `ollama` or `hash` (offline, deterministic) |
+| `EMBED_BATCH_SIZE` / `RETRIEVAL_TOP_K` | `32` / `10` | embedding batch size, search results |
+| `OLLAMA_TIMEOUT_SECONDS` / `TEMPERATURE` / `CONTEXT_WINDOW` | `120` / `0.2` / `8192` | generation settings |
 | `MAX_SOURCE_FILES` | `20000` | scanner file cap |
-| `MAX_CALL_DEPTH` | `2` | call-graph traversal depth (later phases) |
+| `MAX_CALL_DEPTH` | `2` | call-graph traversal depth |
 | `ENABLE_GIT_ANALYSIS` / `ENABLE_TEST_ANALYSIS` | `false` / `true` | feature flags |
 | `IGNORE_DIRS` | `target,build,.git,node_modules,generated,out,.idea,.gradle` | comma-separated, skipped when scanning |
 | `MAX_FILE_BYTES` | `2000000` | larger files are skipped |
@@ -235,6 +310,7 @@ All settings come from environment variables or `.env`. Nothing machine-specific
 | `make backend` / `make frontend` | dev servers |
 | `make index SRC=...` / `make scan SRC=...` | index or scan a repository from the CLI |
 | `make resolve SRC=...` | resolve symbols over the indexed repository |
+| `make frontend-test` | frontend typecheck + vitest |
 
 The analyzer tests run against the real jar and **fail, not skip,** if the jar or a JDK 17+ is
 missing, so a broken setup is visible. Frontend production build: `cd frontend && npm run build`.
@@ -249,15 +325,22 @@ move on. Tests are never weakened to make them pass.
 ```
 backend/app/
   config.py, logging_setup.py, main.py
-  cli.py          scan / index commands
-  api/            health, repositories (scan, index, files), jobs
+  cli.py          scan / index / resolve / embed / search / explain / trace / why / evaluate
+  api/            health, repositories (scan, index, files), jobs, knowledge (browse, explain, trace, why, chat)
   scanner/        file discovery, hashing, incremental manifest (SQLite)
   analyzer/       ast_models.py (Pydantic), base.py (interface), java_parser.py (adapter),
                   store.py (persisted per-file results), symbol_table.py, symbol_resolver.py,
                   type_parser.py, jdk_types.py, resolution_models.py
-  services/       repository_service.py, indexing_service.py, jobs.py (background jobs),
-                  resolution_service.py
-backend/tests/    pytest; fixtures/java holds small synthetic Java sources
+  knowledge/      builder (call graph + flows + rules + evidence -> model), store, source reader
+  retrieval/      BM25, embeddings, Chroma, hybrid search (reciprocal rank fusion), indexer
+  context/        token-budgeted context builder, citations, explanation plan
+  llm/            Ollama client, prompts, response parser
+  explain/        explanation service (explain/trace/why/chat), mentor answer format
+  evaluation/     benchmark format, metrics, runner, reports
+  services/       repository, indexing, jobs (background), resolution, knowledge, pipeline,
+                  retrieval, trace, why
+backend/tests/    pytest; fixtures/java and fixtures/project hold small synthetic Java sources
+benchmarks/       evaluation datasets: basic (fixtures A-J), enterprise (synthetic, no comments)
 java-analyzer/    Java 17 + JavaParser sidecar: stdin paths -> stdout NDJSON, one object per file
 frontend/         React + TypeScript + Vite
 scripts/          dump_ast.py
@@ -277,7 +360,10 @@ data/             runtime storage (git-ignored)
 | `409` when starting an index | that repository is already being indexed; poll the job id in the response |
 | CLI exit code 1 | some files hit `analyzer_error`; re-run, they are retried automatically |
 | `resolve` exits 4 | run `index` first; analyses written by an older analyzer version are redone by the next `index` |
-| Frontend shows "Backend: unreachable" | start `make backend` first; check `BACKEND_URL` |
+| Frontend shows "backend unreachable" | start `make backend` first; check `BACKEND_URL` |
+| Explanations say "LLM generation unavailable" | start Ollama and `ollama pull` the models named in `.env`; the Repository page shows the status |
+| `explain` exits 4 | run `index` first; `explain` takes `Class.method`, `Class#method(sig)` or a unique method name |
+| Search says vector search is not configured | run `embed`; with Ollama down, `--bm25-only` still works |
 | `IGNORE_DIRS` seems ignored | it must be comma-separated, not JSON |
 
 ## Privacy
