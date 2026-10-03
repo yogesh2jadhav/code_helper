@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     ollama_chat_model: str = "qwen2.5-coder:7b"
     ollama_embed_model: str = "nomic-embed-text"
 
+    # Retrieval and LLM calls
+    embedding_provider: str = "ollama"  # ollama | hash (offline, deterministic; for tests)
+    embed_batch_size: int = 32
+    retrieval_top_k: int = 10
+    ollama_timeout_seconds: int = 120
+    temperature: float = 0.2
+    context_window: int = 8192
+
     # Pipeline limits
     log_level: str = "INFO"
     max_context_tokens: int = 8000

@@ -614,13 +614,13 @@ class _Context:
         cond, a, b = parts
         atoms, meaning = explain_condition(cond)
         default = len(atoms) == 1 and atoms[0].kind == "null" and _is_default_choice(atoms[0], a, b)
+        kind = _classify(atoms, throws=False, defaults=default)
         literals = [x for at in atoms for x in at.literals]
-        if (
-            default
-        ):  # the fallback of a default is a business constant; plain ternary results are not
+        if default:  # a default's fallback is a business constant; plain ternary results are not
             literals += [x for x in (a, b) if literal_type(x) is not None]
+        strong = kind in ("default_value", "threshold", "literal_match", "null_handling")
         self.add(
-            "default_value" if default else "decision",
+            kind,
             e.start_line,
             e.end_line,
             e.text,
@@ -629,7 +629,7 @@ class _Context:
             atoms=atoms,
             action=f"{a} when true, else {b}",
             literals=literals,
-            confidence="high" if default else "medium",
+            confidence="high" if strong else "medium",
         )
 
     def call(self, e: Expression) -> None:

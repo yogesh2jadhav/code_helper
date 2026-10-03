@@ -18,6 +18,7 @@ from app.services.indexing_service import Progress, ProgressFn
 from app.services.pipeline_service import PipelineService
 from app.services.repository_service import RepositoryService
 from app.services.resolution_service import NotIndexedError, ResolutionService
+from app.services.retrieval_service import RetrievalService
 
 
 def _progress_printer() -> ProgressFn:
@@ -64,6 +65,22 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="also show N example references per unresolved/ambiguous reason",
     )
+
+    embed = sub.add_parser(
+        "embed", help="build the search index (BM25 + embeddings); needs `index` first"
+    )
+    embed.add_argument("path", nargs="?", type=Path, help="repository root (default: SOURCE_ROOT)")
+    embed.add_argument(
+        "--bm25-only", action="store_true", help="skip embeddings (no Ollama needed)"
+    )
+
+    search = sub.add_parser("search", help="hybrid search over the indexed repository")
+    search.add_argument("query")
+    search.add_argument("--path", type=Path, help="repository root (default: SOURCE_ROOT)")
+    search.add_argument("-k", type=int, default=0, help="number of results (default: config)")
+    search.add_argument("--type", action="append", dest="types", help="restrict to a document type")
+    search.add_argument("--class", dest="class_name", help="restrict to a class (fully qualified)")
+    search.add_argument("--bm25-only", action="store_true", help="do not use vector search")
     return parser
 
 
@@ -76,6 +93,54 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "scan":
             summary = RepositoryService(settings).scan(args.path).summary()
             print(summary.model_dump_json(indent=2))
+            return 0
+
+        if args.command == "embed":
+            service = RetrievalService(settings, use_vectors=not args.bm25_only)
+            built = service.index(
+                args.path,
+                lambda stage, done, total: print(
+                    f"\r[{stage}] {done}/{total}",
+                    end="" if done < total else "\n",
+                    file=sys.stderr,
+                    flush=True,
+                ),
+            )
+            print(built.model_dump_json(indent=2))
+            return 1 if built.vector_error else 0
+
+        if args.command == "search":
+            service = RetrievalService(settings, use_vectors=not args.bm25_only)
+            found = service.retriever().search(
+                service.repository_id(args.path),
+                args.query,
+                k=args.k or settings.retrieval_top_k,
+                types=args.types,
+                class_name=args.class_name,
+            )
+            print(
+                json.dumps(
+                    {
+                        "degraded": found.degraded,
+                        "degraded_reason": found.degraded_reason,
+                        "hits": [
+                            {
+                                "score": round(h.score, 4),
+                                "type": h.doc.type,
+                                "file": h.doc.file_path,
+                                "lines": f"{h.doc.line_start}-{h.doc.line_end}",
+                                "class": h.doc.class_name,
+                                "method": h.doc.method_name,
+                                "bm25_rank": h.bm25_rank,
+                                "vector_rank": h.vector_rank,
+                                "text": h.doc.text[:200],
+                            }
+                            for h in found.hits
+                        ],
+                    },
+                    indent=2,
+                )
+            )
             return 0
 
         if args.command == "resolve":
@@ -103,6 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, NotADirectoryError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    except LookupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 4
     except NotIndexedError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 4

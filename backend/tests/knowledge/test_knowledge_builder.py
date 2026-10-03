@@ -328,15 +328,11 @@ def test_unknowns_for_unresolved_calls_and_undocumented_constants(risky: BuiltKn
     assert constants == [
         "the repository does not establish why 77 was chosen (no comment or test mentions it)"
     ]
-    # 0 is trivial, and 120 is mentioned in a comment inside the class, so neither is an unknown
-    assert (
-        not [
-            u
-            for u in method(risky, "Risky#tooOld(int)").unknowns
-            if u.kind == "unestablished_constant"
-        ]
-        or True
-    )
+    # the comment above tooOld() mentions 120, so that constant is explained and not an unknown
+    old = method(risky, "Risky#tooOld(int)")
+    assert [r.meaning for r in old.rule_candidates] == ["age is greater than 120"]
+    assert [e.relation for e in old.evidence if e.source_type == "comment"] == ["explains"]
+    assert [u.kind for u in old.unknowns] == ["purpose_not_documented"]
 
 
 def test_dynamic_dispatch_is_an_unknown(java_analyzer: JavaParserAnalyzer, tmp_path: Path) -> None:
@@ -362,7 +358,7 @@ def test_evidence_covers_code_comments_tests_and_docs(risky: BuiltKnowledge) -> 
     by_type: dict[str, list[str]] = {}
     for e in rec.evidence:
         by_type.setdefault(e.source_type, []).append(e.relation)
-    assert by_type["source_code"] == ["implements", "rule:decision"]
+    assert sorted(by_type["source_code"]) == ["implements", "rule:threshold"]  # `n <= 0 ? ..`
     assert by_type["test"] == ["tested_by"]
     assert by_type["readme"] == ["mentions"]
     test = next(e for e in rec.evidence if e.source_type == "test")
