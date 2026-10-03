@@ -7,6 +7,7 @@ import pytest
 
 from app.analyzer import AnalyzerUnavailableError, JavaParserAnalyzer, ParsedFile
 from app.config import Settings, get_settings
+from tests.shop_repo import SHOP_FILES, World
 
 FIXTURES = Path(__file__).parent / "fixtures" / "java"
 
@@ -46,3 +47,17 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
 
 
 PROJECT = Path(__file__).parent / "fixtures" / "project"
+
+
+@pytest.fixture(scope="session")
+def shop(java_analyzer: JavaParserAnalyzer, tmp_path_factory: pytest.TempPathFactory) -> World:
+    """The shop repository analysed into a knowledge model (see tests/shop_repo.py)."""
+    from tests.helpers import analyze_paths, build_knowledge
+
+    root = tmp_path_factory.mktemp("shop")
+    for rel, text in SHOP_FILES.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    built = build_knowledge(analyze_paths(java_analyzer, root), docs_root=root)
+    return World(root, built)

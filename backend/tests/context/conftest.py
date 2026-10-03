@@ -13,9 +13,7 @@ from app.retrieval.hybrid import HybridRetriever
 from app.retrieval.indexer import RetrievalIndexer
 from app.retrieval.store import RetrievalStore
 from app.retrieval.vector_store import InMemoryVectorStore
-from tests.retrieval.conftest import World
-
-pytest_plugins = ["tests.retrieval.conftest"]  # reuse the `shop` fixture
+from tests.shop_repo import World
 
 
 @dataclass

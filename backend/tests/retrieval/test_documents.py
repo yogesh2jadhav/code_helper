@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.knowledge.source import SourceReader
 from app.retrieval.documents import Document, build_documents
-from tests.retrieval.conftest import World
+from tests.shop_repo import World
 
 
 def docs_of(world: World, with_source: bool = True) -> list[Document]:

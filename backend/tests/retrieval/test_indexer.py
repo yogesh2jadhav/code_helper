@@ -14,7 +14,7 @@ from app.retrieval.store import RetrievalStore
 from app.retrieval.vector_store import InMemoryVectorStore, VectorStoreError
 from app.services.pipeline_service import PipelineService
 from app.services.retrieval_service import RetrievalService, collection_name
-from tests.retrieval.conftest import World
+from tests.shop_repo import World
 
 
 class CountingEmbedder(HashingEmbedder):

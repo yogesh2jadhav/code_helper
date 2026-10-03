@@ -11,7 +11,7 @@ from app.retrieval.hybrid import HybridRetriever
 from app.retrieval.indexer import RetrievalIndexer
 from app.retrieval.store import RetrievalStore
 from app.retrieval.vector_store import InMemoryVectorStore, VectorStoreError
-from tests.retrieval.conftest import World
+from tests.shop_repo import World
 
 CONCEPTS = {
     "cost": 0,
