@@ -53,19 +53,23 @@ class JobManager:
         self._jobs: dict[str, Job] = {}
         self._threads: dict[str, threading.Thread] = {}
 
-    def submit(
-        self, kind: str, root: str, work: Callable[[ProgressFn], IndexSummary]
-    ) -> Job:
+    def submit(self, kind: str, root: str, work: Callable[[ProgressFn], IndexSummary]) -> Job:
         """Start `work` on a background thread. One running job per repository root."""
         with self._lock:
             for existing in self._jobs.values():
                 if existing.root == root and existing.state is JobState.RUNNING:
                     raise JobAlreadyRunningError(existing.id)
-            job = Job(id=uuid.uuid4().hex[:12], kind=kind, root=root, state=JobState.RUNNING,
-                      created_at=datetime.now(UTC))
+            job = Job(
+                id=uuid.uuid4().hex[:12],
+                kind=kind,
+                root=root,
+                state=JobState.RUNNING,
+                created_at=datetime.now(UTC),
+            )
             self._jobs[job.id] = job
-            thread = threading.Thread(target=self._run, args=(job.id, work), daemon=True,
-                                      name=f"job-{job.id}")
+            thread = threading.Thread(
+                target=self._run, args=(job.id, work), daemon=True, name=f"job-{job.id}"
+            )
             self._threads[job.id] = thread
             thread.start()
             return job.model_copy()
@@ -77,8 +81,11 @@ class JobManager:
 
     def list(self) -> list[Job]:
         with self._lock:
-            return sorted((j.model_copy() for j in self._jobs.values()),
-                          key=lambda j: j.created_at, reverse=True)
+            return sorted(
+                (j.model_copy() for j in self._jobs.values()),
+                key=lambda j: j.created_at,
+                reverse=True,
+            )
 
     def wait(self, job_id: str, timeout: float | None = None) -> None:
         thread = self._threads.get(job_id)
@@ -99,11 +106,20 @@ class JobManager:
             result = work(on_progress)
         except Exception as exc:  # job boundary: record any failure instead of dying silently
             logger.exception("job_failed", extra={"job": job_id})
-            self._update(job_id, state=JobState.FAILED, error=f"{type(exc).__name__}: {exc}",
-                         finished_at=datetime.now(UTC))
+            self._update(
+                job_id,
+                state=JobState.FAILED,
+                error=f"{type(exc).__name__}: {exc}",
+                finished_at=datetime.now(UTC),
+            )
         else:
-            self._update(job_id, state=JobState.SUCCEEDED, stage="done", result=result,
-                         finished_at=datetime.now(UTC))
+            self._update(
+                job_id,
+                state=JobState.SUCCEEDED,
+                stage="done",
+                result=result,
+                finished_at=datetime.now(UTC),
+            )
 
 
 @lru_cache

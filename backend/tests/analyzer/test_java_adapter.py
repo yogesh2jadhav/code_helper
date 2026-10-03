@@ -62,7 +62,8 @@ def test_crashing_analyzer_marks_every_file_failed(tmp_path: Path, jar: Path) ->
 
 def test_timeout_marks_files_failed(tmp_path: Path, jar: Path) -> None:
     analyzer = JavaParserAnalyzer(
-        fake_java(tmp_path, "17.0.1", "exec sleep 30"), jar, timeout_seconds=1)
+        fake_java(tmp_path, "17.0.1", "exec sleep 30"), jar, timeout_seconds=1
+    )
     (result,) = analyzer.analyze_files([tmp_path / "A.java"])
     assert result.status == "analyzer_error" and "timed out" in result.errors[0]
 
@@ -114,20 +115,20 @@ def test_latin1_source_still_parses(java_analyzer: JavaParserAnalyzer, tmp_path:
 def test_java_17_syntax(java_analyzer: JavaParserAnalyzer, tmp_path: Path) -> None:
     path = tmp_path / "Modern.java"
     path.write_text(
-        'sealed interface Shape permits Circle, Square {}\n'
-        'record Circle(double r) implements Shape {}\n'
-        'record Square(double s) implements Shape {}\n'
-        'class Modern {\n'
-        '    String describe(Object o) {\n'
+        "sealed interface Shape permits Circle, Square {}\n"
+        "record Circle(double r) implements Shape {}\n"
+        "record Square(double s) implements Shape {}\n"
+        "class Modern {\n"
+        "    String describe(Object o) {\n"
         '        var text = """\n'
-        '            hello\n'
+        "            hello\n"
         '            """;\n'
-        '        if (o instanceof String s && !s.isEmpty()) {\n'
-        '            return s + text;\n'
-        '        }\n'
+        "        if (o instanceof String s && !s.isEmpty()) {\n"
+        "            return s + text;\n"
+        "        }\n"
         '        return switch (o) { default -> "other"; };\n'
-        '    }\n'
-        '}\n'
+        "    }\n"
+        "}\n"
     )
     (result,) = java_analyzer.analyze_files([path])
     assert result.ok, result.errors

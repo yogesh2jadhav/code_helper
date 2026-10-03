@@ -139,10 +139,23 @@ class RepositoryScanner:
             duration_ms=int((time.monotonic() - started) * 1000),
         )
         log_event(logger, "files_discovered", repository=repo_id, count=len(files))
-        log_event(logger, "files_changed", repository=repo_id, added=len(added),
-                  changed=len(changed), removed=len(removed))
-        log_event(logger, "files_skipped", repository=repo_id, count=len(skipped),
-                  unchanged=len(unchanged), ignored_dirs=ignored_dirs)
-        log_event(logger, "repository_scan_completed", repository=repo_id,
-                  duration_ms=result.duration_ms)
+        log_event(
+            logger,
+            "files_changed",
+            repository=repo_id,
+            added=len(added),
+            changed=len(changed),
+            removed=len(removed),
+        )
+        log_event(
+            logger,
+            "files_skipped",
+            repository=repo_id,
+            count=len(skipped),
+            unchanged=len(unchanged),
+            ignored_dirs=ignored_dirs,
+        )
+        log_event(
+            logger, "repository_scan_completed", repository=repo_id, duration_ms=result.duration_ms
+        )
         return result

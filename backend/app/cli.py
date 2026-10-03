@@ -52,7 +52,10 @@ def build_parser() -> argparse.ArgumentParser:
         "path", nargs="?", type=Path, help="repository root (default: SOURCE_ROOT)"
     )
     resolve.add_argument(
-        "--examples", type=int, default=0, metavar="N",
+        "--examples",
+        type=int,
+        default=0,
+        metavar="N",
         help="also show N example references per unresolved/ambiguous reason",
     )
     return parser
@@ -85,7 +88,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         result = IndexingService(settings).index(
-            args.path, force=args.force, batch_size=args.batch_size,
+            args.path,
+            force=args.force,
+            batch_size=args.batch_size,
             on_progress=_progress_printer(),
         )
     except (ValueError, NotADirectoryError) as exc:

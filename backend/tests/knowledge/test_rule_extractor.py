@@ -84,6 +84,31 @@ def test_operators_inside_calls_do_not_split_or_classify() -> None:
     assert atom.kind == "test"  # the `>` is inside the call
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "new ArrayList<>()",
+        "new HashMap<String, List<Integer>>()",
+        "Collections.<String>emptyList()",
+        "flags >> 2",
+        "x << 3 | y",
+        "x -> x + 1",
+        "(a, b) -> a > b ? a : b",
+        "list.size()",
+        "a + b",
+    ],
+)
+def test_generics_shifts_and_lambdas_are_not_comparisons(text: str) -> None:
+    assert [a.kind for a in explain_condition(text)[0]] == ["test"]
+
+
+def test_real_comparisons_next_to_generics_still_count() -> None:
+    atoms, _ = explain_condition("new ArrayList<String>().size() > 3")
+    assert [(a.kind, a.literals) for a in atoms] == [("threshold", ["3"])]
+    assert parse_atom("i < n").kind == "comparison"  # lowercase operands are not a generic type
+    assert [a.kind for a in explain_condition("a < b && c > d")[0]] == ["comparison", "comparison"]
+
+
 def test_compound_conditions_explain_every_part() -> None:
     atoms, meaning = explain_condition(
         'row.amount() > threshold && row.region().equals("EU") || force'

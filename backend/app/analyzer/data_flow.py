@@ -179,7 +179,7 @@ class MethodDataFlow(BaseModel):
 ParamNames = Callable[[str], "list[str] | None"]
 
 
-# ==== construction ======================================================================
+# ==== construction ============================================================
 
 
 def build_data_flow(

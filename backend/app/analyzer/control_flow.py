@@ -179,7 +179,7 @@ class ControlFlow(BaseModel):
             yield from node.walk()
 
 
-# ==== construction ======================================================================
+# ==== construction ============================================================
 
 
 def build_control_flow(
@@ -374,7 +374,7 @@ def _mutation_leaf(
     )
 
 
-# ==== stream pipelines ==================================================================
+# ==== stream pipelines ========================================================
 
 
 def _find_pipelines(
@@ -445,7 +445,7 @@ def _op(call: Expression, collectors: list[Expression]) -> StreamOp:
     )
 
 
-# ==== summary and outline ===============================================================
+# ==== summary and outline =====================================================
 
 
 def _summarize(roots: list[FlowNode], max_depth: int) -> ControlFlowSummary:

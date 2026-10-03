@@ -40,9 +40,15 @@ class ScanResult(BaseModel):
         for item in self.skipped:
             skipped[item.reason] = skipped.get(item.reason, 0) + 1
         return ScanSummary(
-            repository_id=self.repository_id, root=self.root, total_files=len(self.files),
-            added=len(self.added), changed=len(self.changed), unchanged=len(self.unchanged),
-            removed=len(self.removed), skipped=skipped, ignored_dirs=self.ignored_dirs,
+            repository_id=self.repository_id,
+            root=self.root,
+            total_files=len(self.files),
+            added=len(self.added),
+            changed=len(self.changed),
+            unchanged=len(self.unchanged),
+            removed=len(self.removed),
+            skipped=skipped,
+            ignored_dirs=self.ignored_dirs,
             duration_ms=self.duration_ms,
         )
 

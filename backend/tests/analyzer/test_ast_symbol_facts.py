@@ -87,7 +87,9 @@ def lines_of(text: str, needle: str) -> int:
 
 def test_identifier_uses_are_recorded_as_name_refs(flow: Method) -> None:
     assert len(refs(flow, "limit")) >= 3
-    targets = [e for e in flow.expressions if e.kind == "name_ref" and "assignment_target" in e.tags]
+    targets = [
+        e for e in flow.expressions if e.kind == "name_ref" and "assignment_target" in e.tags
+    ]
     # in source order: total +=, count++, total = s.length(), total = 1, i++, total += i, inCase =
     # (`this.label = ..` and `other.count = ..` are field accesses, not simple names)
     assert [t.name for t in targets] == ["total", "count", "total", "total", "i", "total", "inCase"]
@@ -117,8 +119,14 @@ def test_switch_case_enum_labels_are_not_name_refs(
 
 def test_receivers_are_linked_between_expressions(flow: Method) -> None:
     by_id = {e.id: e for e in flow.expressions}
-    chain = next(e for e in flow.expressions if e.kind == "method_call" and e.name == "length"
-                 and e.receiver_kind == "expr" and by_id[e.receiver_expr_id or 0].kind == "field_access")
+    chain = next(
+        e
+        for e in flow.expressions
+        if e.kind == "method_call"
+        and e.name == "length"
+        and e.receiver_kind == "expr"
+        and by_id[e.receiver_expr_id or 0].kind == "field_access"
+    )
     label = by_id[chain.receiver_expr_id or 0]
     assert (label.kind, label.name, label.receiver_kind) == ("field_access", "label", "expr")
     other_call = by_id[label.receiver_expr_id or 0]
@@ -126,9 +134,13 @@ def test_receivers_are_linked_between_expressions(flow: Method) -> None:
     created = by_id[other_call.receiver_expr_id or 0]
     assert (created.kind, created.name) == ("object_creation", "Facts")
 
-    this_assign = next(e for e in flow.expressions if e.kind == "field_access" and e.name == "label")
+    this_assign = next(
+        e for e in flow.expressions if e.kind == "field_access" and e.name == "label"
+    )
     assert this_assign.receiver_kind == "this"
-    unqualified = next(e for e in flow.expressions if e.kind == "method_call" and e.name == "helper")
+    unqualified = next(
+        e for e in flow.expressions if e.kind == "method_call" and e.name == "helper"
+    )
     assert unqualified.receiver_kind == "none"
     println = next(e for e in flow.expressions if e.kind == "method_call" and e.name == "println")
     assert by_id[println.receiver_expr_id or 0].name == "out"  # System.out
@@ -140,8 +152,12 @@ def test_argument_hints(flow: Method) -> None:
     assert first.args is not None
     got = [(h.kind, h.type, h.name) for h in first.args]
     assert got == [
-        ("literal", "int", None), ("literal", "String", None), ("literal", "null", None),
-        ("new", "Facts", None), ("cast", "Object", None), ("literal", "double", None),
+        ("literal", "int", None),
+        ("literal", "String", None),
+        ("literal", "null", None),
+        ("new", "Facts", None),
+        ("cast", "Object", None),
+        ("literal", "double", None),
         ("name", None, "total"),
     ]
 
@@ -166,7 +182,9 @@ def test_variable_scopes_and_origins(flow: Method, java_analyzer: JavaParserAnal
     assert item.tags == ["lambda_param"] and item.type is None  # implicitly typed
 
     ex = decl(flow, "ex")
-    assert ex.tags == ["catch_param"] and ex.type == "IllegalStateException|IllegalArgumentException"
+    assert (
+        ex.tags == ["catch_param"] and ex.type == "IllegalStateException|IllegalArgumentException"
+    )
 
     made = decl(flow, "made")
     assert made.type == "var" and made.initializer is not None
@@ -176,8 +194,11 @@ def test_variable_scopes_and_origins(flow: Method, java_analyzer: JavaParserAnal
 def test_inner_method_parameters_and_local_class_marker(flow: Method) -> None:
     arg = decl(flow, "arg")
     assert arg.tags == ["param", "in_local_class"] or set(arg.tags) == {"param", "in_local_class"}
-    inner_call = next(e for e in flow.expressions if e.kind == "method_call" and e.name == "length"
-                      and "in_local_class" in e.tags)
+    inner_call = next(
+        e
+        for e in flow.expressions
+        if e.kind == "method_call" and e.name == "length" and "in_local_class" in e.tags
+    )
     assert inner_call.receiver_kind == "expr"
     outer_helper = [e for e in flow.expressions if e.kind == "method_call" and e.name == "helper"]
     assert [("in_local_class" in e.tags) for e in outer_helper] == [False, False, True]
@@ -195,8 +216,8 @@ def test_positions_header_ranges_and_operand_text(
         "        if (a > b && b != 0) {\n"
         "            return x + y;\n"
         "        }\n"
-        "        h(a, g(b), \"s\");\n"
-        "        throw new IllegalStateException(\"bad\");\n"
+        '        h(a, g(b), "s");\n'
+        '        throw new IllegalStateException("bad");\n'
         "    }\n"
         "    int g(int v) { return v; }\n"
         "    void h(int p, int q, String r) {}\n"
@@ -209,17 +230,28 @@ def test_positions_header_ranges_and_operand_text(
     assert decls["x"].right == "a + g(b)" and decls["y"].right == "2"
     x_init = decls["x"].initializer
     assert x_init is not None and x_init.range is not None
-    assert (x_init.range.start_line, x_init.range.start_column, x_init.range.end_column) == (3, 17, 24)
+    assert (x_init.range.start_line, x_init.range.start_column, x_init.range.end_column) == (
+        3,
+        17,
+        24,
+    )
     # the initializer range contains the call g(b) and the name a, but not the declarator name
-    inner = {(e.kind, e.name) for e in f.expressions
-             if e.kind in {"name_ref", "method_call"} and x_init.range.contains(e.range)}
+    inner = {
+        (e.kind, e.name)
+        for e in f.expressions
+        if e.kind in {"name_ref", "method_call"} and x_init.range.contains(e.range)
+    }
     assert inner == {("name_ref", "a"), ("method_call", "g"), ("name_ref", "b")}
 
     (assign,) = [e for e in f.expressions if e.kind == "assignment"]
     assert (assign.left, assign.right) == ("x", "y * 3")
     assert assign.initializer is not None and assign.initializer.range is not None
 
-    ops = {e.operator: (e.left, e.right) for e in f.expressions if e.kind in {"comparison", "logical", "null_check"}}
+    ops = {
+        e.operator: (e.left, e.right)
+        for e in f.expressions
+        if e.kind in {"comparison", "logical", "null_check"}
+    }
     assert ops[">"] == ("a", "b") and ops["!="] == ("b", "0") and ops["&&"] == ("a > b", "b != 0")
 
     ret = next(s for s in f.statements if s.kind == "return")
@@ -232,6 +264,8 @@ def test_positions_header_ranges_and_operand_text(
     assert h.arg_texts == ["a", "g(b)", '"s"']
     assert h.args is not None and [a.kind for a in h.args] == ["name", "expr", "literal"]
     assert all(a.range is not None for a in h.args)
-    nested = next(e for e in f.expressions if e.kind == "method_call" and e.name == "g" and e.start_line == 8)
+    nested = next(
+        e for e in f.expressions if e.kind == "method_call" and e.name == "g" and e.start_line == 8
+    )
     assert h.args[1].expr_id == nested.id and h.args[1].range is not None
     assert h.args[1].range.contains(nested.range)

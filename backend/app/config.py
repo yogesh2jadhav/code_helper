@@ -42,7 +42,14 @@ class Settings(BaseSettings):
     # NoDecode: accept comma-separated env values instead of JSON arrays
     ignore_dirs: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
-            "target", "build", ".git", "node_modules", "generated", "out", ".idea", ".gradle",
+            "target",
+            "build",
+            ".git",
+            "node_modules",
+            "generated",
+            "out",
+            ".idea",
+            ".gradle",
         ]
     )
     max_file_bytes: int = 2_000_000

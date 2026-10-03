@@ -83,6 +83,9 @@ _DEFAULT_CALLS = {
 _NULL = re.compile(r"^(?P<a>.+?)\s*(?P<op>==|!=)\s*null$|^null\s*(?P<op2>==|!=)\s*(?P<b>.+)$", re.S)
 _COMPARE = re.compile(r"^(?P<l>.+?)\s*(?P<op>>=|<=|==|!=|>|<)\s*(?P<r>.+)$", re.S)
 _CONSTANT = re.compile(r"^[A-Z][\w.]*\.[A-Z][A-Z0-9_]+$")
+_GENERIC = re.compile(r"\b[A-Z][\w.]*<[\w\s,.?\[\]&<>]*>")  # List<String>, Map<K, List<V>>, Foo<>
+_NON_COMPARISON = (">>>=", "<<=", ">>=", ">>>", ">>", "<<", "->")  # shifts and lambda arrows
+_LAMBDA_START = re.compile(r"^\(?[\w\s,]*\)?\s*->")
 _LAMBDA = re.compile(r"^\(?\s*\w+\s*\)?\s*->\s*(?P<body>.+)$", re.S)
 
 
@@ -148,7 +151,7 @@ class RuleCandidate(BaseModel):
         return ": ".join([parts[0], " ".join(parts[1:])]) if len(parts) > 1 else parts[0]
 
 
-# ==== public API ========================================================================
+# ==== public API ==============================================================
 
 
 def extract_rules(
@@ -168,13 +171,15 @@ def extract_rules(
             if id(pipeline) not in seen_pipelines:
                 seen_pipelines.add(id(pipeline))
                 ctx.pipeline(pipeline, node)
+        if node.kind == "return" and node.text:
+            ctx.return_value(node)
         if node.kind in ("return", "throw") or node.children:
             ctx.switch_expression(node)
     ctx.expressions()
     return sorted(ctx.rules, key=lambda r: (r.start_line, r.kind, r.id))
 
 
-# ==== condition parsing =================================================================
+# ==== condition parsing =======================================================
 
 
 def split_condition(text: str) -> list[tuple[str, str]]:
@@ -238,6 +243,8 @@ def parse_atom(text: str) -> Atom:
 
 
 def _parse_positive(text: str) -> Atom:
+    if _LAMBDA_START.match(text):  # a function value, not a condition
+        return Atom(text=text, kind="test", meaning=text)
     m = _NULL.match(text)
     if m:
         op = m.group("op") or m.group("op2")
@@ -273,6 +280,9 @@ def split_call(text: str) -> tuple[str, str, str] | None:
 
 def _top_level_only(text: str) -> str:
     """The text with parenthesised parts blanked, so operators inside calls are not matched."""
+    text = _GENERIC.sub(lambda m: "_" * len(m.group()), text)  # generics are not comparisons
+    for token in _NON_COMPARISON:
+        text = text.replace(token, "_" * len(token))
     depth = 0
     out: list[str] = []
     quote = ""
@@ -363,7 +373,7 @@ def explain_condition(condition: str) -> tuple[list[Atom], str]:
     return atoms, meaning
 
 
-# ==== extraction ========================================================================
+# ==== extraction ==============================================================
 
 
 class _Context:
@@ -406,23 +416,31 @@ class _Context:
         otherwise = describe_actions(node.branches[0].children) if node.branches else None
         if node.branches and node.branches[0].kind == "else_if":
             otherwise = f"otherwise test: {node.branches[0].text}"
-        kinds = {a.kind for a in atoms}
         throws = any(c.kind == "throw" for c in node.children)
-        kind: RuleKind
-        if throws:
-            kind = "validation"
-        elif _is_default_assignment(node, atoms):
-            kind = "default_value"
-        elif kinds == {"null"}:
-            kind = "null_handling"
-        elif "threshold" in kinds:
-            kind = "threshold"
-        elif "literal_match" in kinds:
-            kind = "literal_match"
-        elif "comparison" in kinds:
-            kind = "comparison"
-        else:
-            kind = "decision"
+        kind = _classify(atoms, throws=throws, defaults=_is_default_assignment(node, atoms))
+        self._add_condition(
+            kind, node.start_line, node.end_line, condition, meaning, atoms, action, otherwise
+        )
+
+    def boolean_value(self, e: Expression, text: str, action: str) -> None:
+        """A comparison/logical expression used as a value: `return a > 5 && b != null;`."""
+        atoms, meaning = explain_condition(text)
+        if all(a.kind == "test" for a in atoms):
+            return  # a plain call or identifier, not a rule-like expression
+        kind = _classify(atoms, throws=False, defaults=False)
+        self._add_condition(kind, e.start_line, e.end_line, text, meaning, atoms, action, None)
+
+    def _add_condition(
+        self,
+        kind: RuleKind,
+        start: int,
+        end: int,
+        condition: str,
+        meaning: str,
+        atoms: list[Atom],
+        action: str | None,
+        otherwise: str | None,
+    ) -> None:
         literals = [x for a in atoms for x in a.literals]
         strong = kind in (
             "validation",
@@ -433,8 +451,8 @@ class _Context:
         )
         self.add(
             kind,
-            node.start_line,
-            node.end_line,
+            start,
+            end,
             condition,
             condition=condition,
             meaning=meaning,
@@ -466,6 +484,25 @@ class _Context:
             literals=literals,
             confidence="high",
         )
+
+    def return_value(self, node: FlowNode) -> None:
+        if node.text and "?" not in _top_level_only(node.text) and "->" not in node.text:
+            expr = next(
+                (
+                    e
+                    for e in self.method.expressions
+                    if e.start_line == node.start_line and e.text == node.text
+                ),
+                None,
+            )
+            anchor = expr or Expression(
+                id=-1,
+                kind="logical",
+                start_line=node.start_line,
+                end_line=node.end_line,
+                text=node.text,
+            )
+            self.boolean_value(anchor, node.text, "the method returns this result")
 
     def switch_expression(self, node: FlowNode) -> None:
         cases = [c for c in node.children if c.kind in ("case", "default")]
@@ -557,6 +594,14 @@ class _Context:
 
     def expressions(self) -> None:
         for e in self.method.expressions:
+            if (
+                e.kind in ("variable_declaration", "assignment")
+                and e.right
+                and not ({"foreach", "for_init", "resource"} & set(e.tags))
+                and "?" not in _top_level_only(e.right)
+                and "->" not in e.right
+            ):
+                self.boolean_value(e, e.right, f"the result is stored in {e.name or ''}")
             if e.kind == "ternary":
                 self.ternary(e)
             elif e.kind == "method_call":
@@ -569,9 +614,11 @@ class _Context:
         cond, a, b = parts
         atoms, meaning = explain_condition(cond)
         default = len(atoms) == 1 and atoms[0].kind == "null" and _is_default_choice(atoms[0], a, b)
-        literals = [x for at in atoms for x in at.literals] + [
-            x for x in (a, b) if literal_type(x) is not None
-        ]
+        literals = [x for at in atoms for x in at.literals]
+        if (
+            default
+        ):  # the fallback of a default is a business constant; plain ternary results are not
+            literals += [x for x in (a, b) if literal_type(x) is not None]
         self.add(
             "default_value" if default else "decision",
             e.start_line,
@@ -629,7 +676,24 @@ class _Context:
             )
 
 
-# ==== helpers ===========================================================================
+# ==== helpers =================================================================
+
+
+def _classify(atoms: list[Atom], *, throws: bool, defaults: bool) -> RuleKind:
+    kinds = {a.kind for a in atoms}
+    if throws:
+        return "validation"
+    if defaults:
+        return "default_value"
+    if kinds == {"null"}:
+        return "null_handling"
+    if "threshold" in kinds:
+        return "threshold"
+    if "literal_match" in kinds:
+        return "literal_match"
+    if "comparison" in kinds:
+        return "comparison"
+    return "decision"
 
 
 def describe_actions(nodes: list[FlowNode], limit: int = 3) -> str | None:

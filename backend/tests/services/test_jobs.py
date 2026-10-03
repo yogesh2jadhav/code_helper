@@ -10,10 +10,31 @@ from app.services.jobs import JobAlreadyRunningError, JobManager, JobState
 
 
 def dummy_summary() -> IndexSummary:
-    scan = ScanSummary(repository_id="r", root="/x", total_files=1, added=1, changed=0, unchanged=0,
-                       removed=0, skipped={}, ignored_dirs=0, duration_ms=1)
-    return IndexSummary(repository_id="r", root="/x", total_files=1, analyzed=1, up_to_date=0, ok=1,
-                        parse_errors=0, analyzer_errors=0, pruned=0, duration_ms=1, scan=scan)
+    scan = ScanSummary(
+        repository_id="r",
+        root="/x",
+        total_files=1,
+        added=1,
+        changed=0,
+        unchanged=0,
+        removed=0,
+        skipped={},
+        ignored_dirs=0,
+        duration_ms=1,
+    )
+    return IndexSummary(
+        repository_id="r",
+        root="/x",
+        total_files=1,
+        analyzed=1,
+        up_to_date=0,
+        ok=1,
+        parse_errors=0,
+        analyzer_errors=0,
+        pruned=0,
+        duration_ms=1,
+        scan=scan,
+    )
 
 
 def test_successful_job_reports_progress_and_result() -> None:

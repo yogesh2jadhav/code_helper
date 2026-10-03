@@ -11,6 +11,7 @@ from app.analyzer.ast_models import Method
 from app.analyzer.resolution_models import FileResolution, Resolution
 from app.analyzer.symbol_resolver import SymbolResolver
 from app.analyzer.symbol_table import AnalyzedFile, SymbolTable
+from app.knowledge.builder import BuildOptions, BuiltKnowledge, KnowledgeBuilder
 
 
 @dataclass
@@ -81,3 +82,16 @@ class ByMethod[T]:
         matches = [v for k, v in self.results.items() if k.endswith(suffix)]
         assert len(matches) == 1, f"{suffix}: {len(matches)} matches"
         return matches[0]
+
+
+def build_knowledge(analysis: Analysis, **option_kwargs: object) -> BuiltKnowledge:
+
+    builder = KnowledgeBuilder(
+        "test-repo",
+        analysis.files,
+        analysis.table,
+        analysis.resolver,
+        analysis.resolutions,
+        BuildOptions(**option_kwargs),  # type: ignore[arg-type]
+    )
+    return builder.build()

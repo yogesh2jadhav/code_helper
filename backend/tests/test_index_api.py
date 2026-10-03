@@ -50,13 +50,16 @@ def test_index_runs_in_background_and_is_incremental(client: TestClient) -> None
     assert (result["ok"], result["parse_errors"], result["analyzer_errors"]) == (7, 1, 0)
 
     again = wait_for_job(
-        client, client.post("/api/repositories/index", json={"path": str(FIXTURES)}).json()["id"])
+        client, client.post("/api/repositories/index", json={"path": str(FIXTURES)}).json()["id"]
+    )
     assert (again["result"]["analyzed"], again["result"]["up_to_date"]) == (0, 8)
     assert len(client.get("/api/jobs").json()) == 2
 
 
 def test_file_listing_is_paginated(client: TestClient) -> None:
-    repo_id = client.post("/api/repositories/scan", json={"path": str(FIXTURES)}).json()["repository_id"]
+    repo_id = client.post("/api/repositories/scan", json={"path": str(FIXTURES)}).json()[
+        "repository_id"
+    ]
     page = client.get(f"/api/repositories/{repo_id}/files", params={"limit": 3, "offset": 6}).json()
     assert (page["total"], page["limit"], page["offset"], len(page["files"])) == (8, 3, 6, 2)
     first = client.get(f"/api/repositories/{repo_id}/files", params={"limit": 3}).json()["files"]
@@ -82,7 +85,10 @@ def test_second_index_while_one_is_running_gets_409(client: TestClient) -> None:
 
 def test_error_responses(client: TestClient, tmp_path: Path) -> None:
     assert client.post("/api/repositories/index", json={}).status_code == 400  # no SOURCE_ROOT
-    assert client.post("/api/repositories/index", json={"path": str(tmp_path / "nope")}).status_code == 400
+    assert (
+        client.post("/api/repositories/index", json={"path": str(tmp_path / "nope")}).status_code
+        == 400
+    )
     assert client.get("/api/repositories/unknown/files").status_code == 404
     assert client.get("/api/jobs/unknown").status_code == 404
 
@@ -91,7 +97,9 @@ def test_error_responses(client: TestClient, tmp_path: Path) -> None:
 
 
 def test_cli_scan_and_index(
-    isolated_settings: Settings, java_analyzer: object, tmp_path: Path,
+    isolated_settings: Settings,
+    java_analyzer: object,
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     src = tmp_path / "src"

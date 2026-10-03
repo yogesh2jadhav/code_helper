@@ -79,23 +79,32 @@ class IndexingService:
 
         emit(Progress("scan", 0, 0))
         scanner = RepositoryScanner(
-            self._scan_store, self._settings.ignore_dirs,
-            self._settings.max_source_files, self._settings.max_file_bytes,
+            self._scan_store,
+            self._settings.ignore_dirs,
+            self._settings.max_source_files,
+            self._settings.max_file_bytes,
         )
         scan = scanner.scan(self.resolve_root(root))
         repo_id = scan.repository_id
 
         stored = self._analysis_store.states(repo_id)
         pending = [
-            f for f in scan.files
+            f
+            for f in scan.files
             if force
             or f.id not in stored
             or stored[f.id][0] != f.hash  # source changed since it was analysed
             or stored[f.id][1] == "analyzer_error"  # transient failure: retry
         ]
         total = len(pending)
-        log_event(logger, "index_started", repository=repo_id, files=len(scan.files),
-                  pending=total, batch_size=size)
+        log_event(
+            logger,
+            "index_started",
+            repository=repo_id,
+            files=len(scan.files),
+            pending=total,
+            batch_size=size,
+        )
 
         counts = {"ok": 0, "parse_error": 0, "analyzer_error": 0}
         emit(Progress("analyze", 0, total))
@@ -114,12 +123,24 @@ class IndexingService:
         emit(Progress("finalize", total, total))
         pruned = self._analysis_store.prune(repo_id)
         summary = IndexSummary(
-            repository_id=repo_id, root=scan.root, total_files=len(scan.files), analyzed=total,
-            up_to_date=len(scan.files) - total, ok=counts["ok"],
-            parse_errors=counts["parse_error"], analyzer_errors=counts["analyzer_error"],
-            pruned=pruned, duration_ms=int((time.monotonic() - started) * 1000),
+            repository_id=repo_id,
+            root=scan.root,
+            total_files=len(scan.files),
+            analyzed=total,
+            up_to_date=len(scan.files) - total,
+            ok=counts["ok"],
+            parse_errors=counts["parse_error"],
+            analyzer_errors=counts["analyzer_error"],
+            pruned=pruned,
+            duration_ms=int((time.monotonic() - started) * 1000),
             scan=scan.summary(),
         )
-        log_event(logger, "index_completed", repository=repo_id, analyzed=total,
-                  up_to_date=summary.up_to_date, duration_ms=summary.duration_ms)
+        log_event(
+            logger,
+            "index_completed",
+            repository=repo_id,
+            analyzed=total,
+            up_to_date=summary.up_to_date,
+            duration_ms=summary.duration_ms,
+        )
         return summary

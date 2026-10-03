@@ -63,8 +63,16 @@ class AnalysisStore:
                 " ast_json=excluded.ast_json, analyzed_at=excluded.analyzed_at,"
                 " schema_version=excluded.schema_version",
                 [
-                    (file_id, repository_id, digest, parsed.status, json.dumps(parsed.errors),
-                     parsed.model_dump_json(by_alias=True), now, AST_SCHEMA_VERSION)
+                    (
+                        file_id,
+                        repository_id,
+                        digest,
+                        parsed.status,
+                        json.dumps(parsed.errors),
+                        parsed.model_dump_json(by_alias=True),
+                        now,
+                        AST_SCHEMA_VERSION,
+                    )
                     for file_id, digest, parsed in items
                 ],
             )

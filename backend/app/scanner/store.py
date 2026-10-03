@@ -76,8 +76,18 @@ class ScanStore:
                 " size=excluded.size, last_scanned=excluded.last_scanned,"
                 " encoding_issue=excluded.encoding_issue, path=excluded.path",
                 [
-                    (f.id, f.repository_id, f.path, f.relative_path, f.hash, f.package, f.size,
-                     f.language, f.last_scanned.isoformat(), int(f.encoding_issue))
+                    (
+                        f.id,
+                        f.repository_id,
+                        f.path,
+                        f.relative_path,
+                        f.hash,
+                        f.package,
+                        f.size,
+                        f.language,
+                        f.last_scanned.isoformat(),
+                        int(f.encoding_issue),
+                    )
                     for f in files
                 ],
             )
@@ -126,8 +136,14 @@ class ScanStore:
 
 def _row_to_file(r: sqlite3.Row) -> SourceFile:
     return SourceFile(
-        id=r["id"], repository_id=r["repository_id"], path=r["path"],
-        relative_path=r["relative_path"], hash=r["hash"], package=r["package"], size=r["size"],
-        language=r["language"], last_scanned=datetime.fromisoformat(r["last_scanned"]),
+        id=r["id"],
+        repository_id=r["repository_id"],
+        path=r["path"],
+        relative_path=r["relative_path"],
+        hash=r["hash"],
+        package=r["package"],
+        size=r["size"],
+        language=r["language"],
+        last_scanned=datetime.fromisoformat(r["last_scanned"]),
         encoding_issue=bool(r["encoding_issue"]),
     )

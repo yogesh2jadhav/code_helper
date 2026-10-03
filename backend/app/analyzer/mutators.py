@@ -9,13 +9,43 @@ from __future__ import annotations
 
 MUTATING_METHODS = frozenset(
     {
-        "add", "addAll", "addFirst", "addLast", "put", "putAll", "putIfAbsent", "remove", "removeAll",
-        "removeIf", "removeFirst", "removeLast", "retainAll", "clear", "push", "pop", "poll", "offer",
-        "offerFirst", "offerLast", "append", "insert", "delete", "deleteCharAt", "set", "sort",
-        "replaceAll", "merge", "compute", "computeIfAbsent", "computeIfPresent", "setLength",
-        "reverse", "shuffle", "fill",
+        "add",
+        "addAll",
+        "addFirst",
+        "addLast",
+        "put",
+        "putAll",
+        "putIfAbsent",
+        "remove",
+        "removeAll",
+        "removeIf",
+        "removeFirst",
+        "removeLast",
+        "retainAll",
+        "clear",
+        "push",
+        "pop",
+        "poll",
+        "offer",
+        "offerFirst",
+        "offerLast",
+        "append",
+        "insert",
+        "delete",
+        "deleteCharAt",
+        "set",
+        "sort",
+        "replaceAll",
+        "merge",
+        "compute",
+        "computeIfAbsent",
+        "computeIfPresent",
+        "setLength",
+        "reverse",
+        "shuffle",
+        "fill",
     }
-)  # fmt: skip
+)
 
 
 def is_mutator(name: str | None) -> bool:

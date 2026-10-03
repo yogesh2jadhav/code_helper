@@ -55,7 +55,8 @@ def start_index(request: IndexRequest) -> Job:
         raise HTTPException(status_code=400, detail=f"source root is not a directory: {root}")
     try:
         return get_job_manager().submit(
-            "index", str(root),
+            "index",
+            str(root),
             lambda progress: service.index(
                 root, force=request.force, batch_size=request.batch_size, on_progress=progress
             ),

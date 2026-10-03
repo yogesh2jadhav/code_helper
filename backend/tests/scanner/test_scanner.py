@@ -129,13 +129,20 @@ def test_max_source_files_and_max_file_bytes(tmp_path: Path, repo: Path) -> None
     assert {s.reason for s in result.skipped} == {"max_source_files", "too_large"}
 
 
-def test_scan_logs_pipeline_events(tmp_path: Path, repo: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_scan_logs_pipeline_events(
+    tmp_path: Path, repo: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     write(repo, "A.java")
     with caplog.at_level(logging.INFO, logger="app.scanner.scanner"):
         make_scanner(tmp_path).scan(repo)
     messages = [r.getMessage() for r in caplog.records]
-    for event in ("repository_scan_started", "files_discovered", "files_changed",
-                  "files_skipped", "repository_scan_completed"):
+    for event in (
+        "repository_scan_started",
+        "files_discovered",
+        "files_changed",
+        "files_skipped",
+        "repository_scan_completed",
+    ):
         assert event in messages
     assert "class A" not in " ".join(messages)  # source is never logged
 
