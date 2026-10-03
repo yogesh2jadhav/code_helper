@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.env
+data/*
+!data/indexes/.gitkeep
+!data/knowledge/.gitkeep
+node_modules/
+frontend/dist/
+java-analyzer/target/
+.DS_Store
+*.sqlite3
+.idea/
