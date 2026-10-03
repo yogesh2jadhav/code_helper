@@ -39,4 +39,4 @@ resolve:
 	PYTHONPATH=backend $(PY)/python -m app.cli resolve $(SRC)
 
 frontend-test:
-	cd frontend \&\& npm run typecheck \&\& npm test
+	cd frontend && npm run typecheck \&\& npm test
