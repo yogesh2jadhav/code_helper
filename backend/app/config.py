@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     temperature: float = 0.2
     context_window: int = 8192
 
+    # Share of MAX_CONTEXT_TOKENS given to each part of the LLM context (renormalised to sum to 1)
+    context_budget_target: float = 0.35  # the method itself: model, source, types
+    context_budget_callees: float = 0.25
+    context_budget_flow: float = 0.20  # data flow, rules, control-flow outline
+    context_budget_evidence: float = 0.20  # tests, comments, docs, callers, retrieved
+
     # Pipeline limits
     log_level: str = "INFO"
     max_context_tokens: int = 8000

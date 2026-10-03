@@ -156,7 +156,9 @@ class VariableFlow(BaseModel):
         for e in self.events:
             if e.kind == "read":
                 continue
-            out.setdefault(e.kind, []).append(f"L{e.line} {e.detail}".strip())
+            entry = f"L{e.line} {e.detail}".strip()
+            if entry not in out.setdefault(e.kind, []):  # e.g. both branches of a ternary return it
+                out[e.kind].append(entry)
         return out
 
 

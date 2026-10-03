@@ -440,7 +440,7 @@ class KnowledgeBuilder:
             return_type=m.return_type,
             is_test=d.is_test,
             purpose=d.purpose or _empty_purpose(m),
-            parameters=self._parameters(d, incoming),
+            parameters=self._parameters(d, incoming, by_method_id),
             output=self._output(d),
             callees=callees,
             callers=callers,
@@ -460,14 +460,19 @@ class KnowledgeBuilder:
         )
 
     def _parameters(
-        self, d: _Draft, incoming: dict[tuple[str, str], list[tuple[str, FlowRef, int]]]
+        self,
+        d: _Draft,
+        incoming: dict[tuple[str, str], list[tuple[str, FlowRef, int]]],
+        by_method_id: dict[str, _Draft],
     ) -> list[ParameterInfo]:
         out: list[ParameterInfo] = []
         for p in d.method.parameters:
             sources = incoming.get((d.resolution.method_id, p.name), [])
             seen: dict[str, None] = {}
             for caller, ref, line in sources:
-                seen[f"{_short(caller)} L{line}: {describe_ref(ref)}"] = None
+                caller_draft = by_method_id.get(caller)
+                tag = " [test]" if caller_draft is not None and caller_draft.is_test else ""
+                seen[f"{_short(caller)} L{line}: {describe_ref(ref)}{tag}"] = None
             comes_from = list(seen)[:6]
             if len(seen) > 6:
                 comes_from.append(f"(+{len(seen) - 6} more call sites)")
