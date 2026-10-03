@@ -4,7 +4,7 @@ import logging
 
 from fastapi import FastAPI
 
-from app.api import health, repositories
+from app.api import health, jobs, repositories
 from app.config import get_settings
 from app.logging_setup import configure_logging
 
@@ -16,6 +16,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Code Helper", version="0.1.0")
     app.include_router(health.router)
     app.include_router(repositories.router)
+    app.include_router(jobs.router)
     return app
 
 

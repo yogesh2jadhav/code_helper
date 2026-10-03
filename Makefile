@@ -2,7 +2,7 @@
 JDK17_HOME ?= /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 PY := .venv/bin
 
-.PHONY: install analyzer test lint typecheck check backend frontend
+.PHONY: install analyzer test lint typecheck check backend frontend scan index
 
 install:
 	uv sync --python 3.12 --group dev
@@ -27,3 +27,10 @@ backend:
 
 frontend:
 	cd frontend && npm run dev
+
+# Usage: make index SRC=/path/to/java/repo   (SRC optional if SOURCE_ROOT is set in .env)
+scan:
+	PYTHONPATH=backend $(PY)/python -m app.cli scan $(SRC)
+
+index:
+	PYTHONPATH=backend $(PY)/python -m app.cli index $(SRC)

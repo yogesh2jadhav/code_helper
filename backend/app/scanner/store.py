@@ -82,6 +82,29 @@ class ScanStore:
                 ],
             )
 
+    def list_files(self, repository_id: str, limit: int, offset: int) -> list[SourceFile]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT * FROM source_files WHERE repository_id = ? ORDER BY relative_path"
+                " LIMIT ? OFFSET ?",
+                (repository_id, limit, offset),
+            ).fetchall()
+        return [_row_to_file(r) for r in rows]
+
+    def count_files(self, repository_id: str) -> int:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM source_files WHERE repository_id = ?", (repository_id,)
+            ).fetchone()
+        return int(row[0])
+
+    def has_repository(self, repository_id: str) -> bool:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM repositories WHERE id = ?", (repository_id,)
+            ).fetchone()
+        return row is not None
+
     def list_repositories(self) -> list[Repository]:
         with closing(self._connect()) as conn:
             rows = conn.execute(

@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     )
     max_file_bytes: int = 2_000_000
 
+    # Indexing: files per analyzer (JVM) call; progress and persistence are per batch
+    index_batch_size: int = 50
+
     # Java analyzer sidecar (JavaParser, requires JDK 17+)
     java_bin: str = "java"
     analyzer_jar: Path = PROJECT_ROOT / "java-analyzer" / "target" / "java-analyzer.jar"

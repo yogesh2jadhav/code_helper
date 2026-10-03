@@ -82,7 +82,7 @@ macOS with Homebrew: `brew install uv openjdk@17 maven node`.
    make check
    ```
 
-   This runs ruff, mypy and pytest. Expect all green (58 tests).
+   This runs ruff, mypy and pytest. Expect all green (78 tests).
 
 ## Run
 
@@ -105,23 +105,55 @@ the backend; point it elsewhere with `BACKEND_URL=http://host:port make frontend
 
 ## Use it
 
-### Scan a Java repository
+### Index a repository (recommended: CLI)
 
-Pass a path in the request, or set `SOURCE_ROOT` in `.env` and send an empty body.
-
-```bash
-curl -X POST http://localhost:8000/api/repositories/scan \
-  -H 'content-type: application/json' \
-  -d '{"path": "/absolute/path/to/your/java/repo"}'
-```
-
-The response lists discovered files (path, hash, package, size) and what changed since the last
-scan: `added`, `changed`, `unchanged`, `removed`, `skipped`. Scan again after editing code and only
-the changed files are reported as needing re-analysis. List scanned repositories:
+Indexing parses every Java file and stores the result, which takes a while on a large repository, so
+it is a CLI command rather than a blocking HTTP call.
 
 ```bash
-curl http://localhost:8000/api/repositories
+make index SRC=/absolute/path/to/your/java/repo
+# or: PYTHONPATH=backend .venv/bin/python -m app.cli index /path/to/repo [--force] [--batch-size N]
 ```
+
+It prints a live `[analyze] 840/1700 files` counter and a JSON summary. It is **incremental and
+resumable**: results are saved after every batch and keyed by file hash, so
+
+- re-running on an unchanged repo does no analysis and never starts the JVM (about 0.3 s for 1,700 files),
+- after edits, only new/changed files are re-analyzed,
+- if a run is interrupted (Ctrl+C, crash), the next run continues with the remaining files,
+- files that failed because the analyzer itself broke (`analyzer_error`) are retried; genuine Java
+  syntax errors (`parse_error`) are a stable result and are not.
+
+`--force` re-analyzes everything. Exit codes: `0` ok, `1` some files hit analyzer errors, `2` bad
+path/config, `3` analyzer unavailable (no jar or JDK < 17). Reference timing: 1,700 generated classes
+indexed cold in about 9 s on a laptop, producing a ~17 MB SQLite database.
+
+Quick, analysis-free file discovery: `make scan SRC=/path/to/repo` (counts of added, changed,
+unchanged, removed and skipped files).
+
+### Index through the REST API (background job)
+
+The API starts the same work in the background and returns immediately; poll the job for progress.
+
+```bash
+# 1. start (returns 202 with a job id; 409 if this repo is already being indexed)
+curl -X POST http://localhost:8000/api/repositories/index \
+  -H 'content-type: application/json' -d '{"path": "/absolute/path/to/your/java/repo"}'
+
+# 2. poll: state is running | succeeded | failed; stage/done/total give progress
+curl http://localhost:8000/api/jobs/<job-id>
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/repositories/index` | start indexing (`path`, `force`, `batch_size`; empty body uses `SOURCE_ROOT`) |
+| `GET /api/jobs/{id}`, `GET /api/jobs` | job progress, result summary or error |
+| `POST /api/repositories/scan` | fast discovery, returns **counts only** |
+| `GET /api/repositories` | scanned repositories |
+| `GET /api/repositories/{id}/files?limit=100&offset=0` | paginated file list (limit up to 1000) |
+
+Jobs are held in memory and disappear when the server restarts; the indexing itself is resumable, so
+nothing but the progress display is lost.
 
 ### Inspect the AST of one file
 
@@ -168,6 +200,7 @@ All settings come from environment variables or `.env`. Nothing machine-specific
 | `ENABLE_GIT_ANALYSIS` / `ENABLE_TEST_ANALYSIS` | `false` / `true` | feature flags |
 | `IGNORE_DIRS` | `target,build,.git,node_modules,generated,out,.idea,.gradle` | comma-separated, skipped when scanning |
 | `MAX_FILE_BYTES` | `2000000` | larger files are skipped |
+| `INDEX_BATCH_SIZE` | `50` | files per analyzer call; progress is saved after each batch |
 | `JAVA_BIN` | `java` | JDK 17+ binary used to run the analyzer |
 | `ANALYZER_JAR` | `java-analyzer/target/java-analyzer.jar` | analyzer jar location |
 | `ANALYZER_TIMEOUT_SECONDS` | `300` | per-batch analyzer timeout |
@@ -183,6 +216,7 @@ All settings come from environment variables or `.env`. Nothing machine-specific
 | `make typecheck` | mypy (strict) |
 | `make check` | lint + typecheck + test |
 | `make backend` / `make frontend` | dev servers |
+| `make index SRC=...` / `make scan SRC=...` | index or scan a repository from the CLI |
 
 The analyzer tests run against the real jar and **fail, not skip,** if the jar or a JDK 17+ is
 missing, so a broken setup is visible. Frontend production build: `cd frontend && npm run build`.
@@ -197,10 +231,12 @@ move on. Tests are never weakened to make them pass.
 ```
 backend/app/
   config.py, logging_setup.py, main.py
-  api/            health, repositories (scan / list)
+  cli.py          scan / index commands
+  api/            health, repositories (scan, index, files), jobs
   scanner/        file discovery, hashing, incremental manifest (SQLite)
-  analyzer/       ast_models.py (Pydantic), base.py (analyzer interface), java_parser.py (adapter)
-  services/       repository_service.py
+  analyzer/       ast_models.py (Pydantic), base.py (interface), java_parser.py (adapter),
+                  store.py (persisted per-file results)
+  services/       repository_service.py, indexing_service.py, jobs.py (background jobs)
 backend/tests/    pytest; fixtures/java holds small synthetic Java sources
 java-analyzer/    Java 17 + JavaParser sidecar: stdin paths -> stdout NDJSON, one object per file
 frontend/         React + TypeScript + Vite
@@ -217,7 +253,9 @@ data/             runtime storage (git-ignored)
 | `cannot run 'java'` or `Unable to locate a Java Runtime` | set `JAVA_BIN` in `.env` to a JDK 17+ binary |
 | `Java 17+ required, ... is Java N` | point `JAVA_BIN` at a newer JDK |
 | `make analyzer` builds with the wrong JDK or fails | pass `JDK17_HOME=...`; `/usr/libexec/java_home -V` lists installed JDKs |
-| Scan returns HTTP 400 | the path is not a directory, or neither `path` nor `SOURCE_ROOT` was given |
+| Scan/index returns HTTP 400 (or CLI exit 2) | the path is not a directory, or neither `path` nor `SOURCE_ROOT` was given |
+| `409` when starting an index | that repository is already being indexed; poll the job id in the response |
+| CLI exit code 1 | some files hit `analyzer_error`; re-run, they are retried automatically |
 | Frontend shows "Backend: unreachable" | start `make backend` first; check `BACKEND_URL` |
 | `IGNORE_DIRS` seems ignored | it must be comma-separated, not JSON |
 

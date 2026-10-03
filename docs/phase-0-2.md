@@ -49,5 +49,6 @@ For example `x.map(...)` is only tagged `optional` when the chain starts at `Opt
 * Methods of anonymous/local classes are folded into the enclosing method's statements/expressions,
   not extracted as separate methods. Enum-constant class bodies and initializer blocks are skipped.
 * Operators `!`, casts, `instanceof` and array access are not recorded as expressions yet.
-* Incremental analysis: the scanner reports `to_analyze` (added + changed); persistence of parse
-  results and skipping of unchanged files arrive with SQLite persistence / Phase 23.
+* Parse results are persisted as raw AST JSON in `file_analysis` (keyed by file hash) so indexing is
+  incremental and resumable. The normalized knowledge-model tables arrive with Phase 10.
+  Invalidation is file-level only; dependent-file invalidation comes later.

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from app.analyzer import AnalyzerUnavailableError, JavaParserAnalyzer, ParsedFile
-from app.config import get_settings
+from app.config import Settings, get_settings
 
 FIXTURES = Path(__file__).parent / "fixtures" / "java"
 
@@ -28,3 +29,17 @@ def parsed(java_analyzer: JavaParserAnalyzer) -> dict[str, ParsedFile]:
     paths = sorted(FIXTURES.rglob("*.java"))
     results = java_analyzer.analyze_files(paths)
     return {p.relative_to(FIXTURES).as_posix(): r for p, r in zip(paths, results, strict=True)}
+
+
+@pytest.fixture
+def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Settings]:
+    """Settings (and the job manager) pointed at a throwaway data dir."""
+    from app.services.jobs import get_job_manager
+
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("SOURCE_ROOT", "")
+    get_settings.cache_clear()
+    get_job_manager.cache_clear()
+    yield get_settings()
+    get_settings.cache_clear()
+    get_job_manager.cache_clear()
