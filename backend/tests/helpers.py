@@ -1,4 +1,4 @@
-"""Shared helpers for tests that need parsed + resolved Java built from inline sources."""
+"""Shared helpers for tests that need parsed + resolved Java, knowledge models and environments."""
 
 from __future__ import annotations
 
@@ -12,6 +12,11 @@ from app.analyzer.resolution_models import FileResolution, Resolution
 from app.analyzer.symbol_resolver import SymbolResolver
 from app.analyzer.symbol_table import AnalyzedFile, SymbolTable
 from app.knowledge.builder import BuildOptions, BuiltKnowledge, KnowledgeBuilder
+from app.knowledge.models import MethodKnowledge
+from app.knowledge.source import SourceReader
+from app.knowledge.store import KnowledgeStore
+from app.retrieval.hybrid import HybridRetriever
+from tests.shop_repo import World
 
 
 @dataclass
@@ -95,3 +100,20 @@ def build_knowledge(analysis: Analysis, **option_kwargs: object) -> BuiltKnowled
         BuildOptions(**option_kwargs),  # type: ignore[arg-type]
     )
     return builder.build()
+
+
+@dataclass
+class Env:
+    world: World
+    store: KnowledgeStore
+    reader: SourceReader
+    retriever: HybridRetriever
+
+    @property
+    def repo(self) -> str:
+        return self.world.repository_id
+
+    def method(self, name: str) -> MethodKnowledge:
+        found = [m for m in self.store.iter_methods(self.repo) if m.name == name and not m.is_test]
+        assert len(found) == 1, f"{name}: {len(found)}"
+        return found[0]

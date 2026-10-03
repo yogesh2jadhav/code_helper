@@ -5,7 +5,7 @@ import pytest
 from app.config import Settings
 from app.context.context_builder import ContextBuilder, ContextPackage
 from app.context.tokens import estimate_tokens, truncate_to_tokens
-from tests.context.conftest import Env
+from tests.helpers import Env
 
 PS = "com.acme.service.PricingService"
 

@@ -7,6 +7,14 @@ import pytest
 
 from app.analyzer import AnalyzerUnavailableError, JavaParserAnalyzer, ParsedFile
 from app.config import Settings, get_settings
+from app.knowledge.source import SourceReader
+from app.knowledge.store import KnowledgeStore
+from app.retrieval.embeddings import HashingEmbedder
+from app.retrieval.hybrid import HybridRetriever
+from app.retrieval.indexer import RetrievalIndexer
+from app.retrieval.store import RetrievalStore
+from app.retrieval.vector_store import InMemoryVectorStore
+from tests.helpers import Env, analyze_paths, build_knowledge
 from tests.shop_repo import SHOP_FILES, World
 
 FIXTURES = Path(__file__).parent / "fixtures" / "java"
@@ -51,9 +59,7 @@ PROJECT = Path(__file__).parent / "fixtures" / "project"
 
 @pytest.fixture(scope="session")
 def shop(java_analyzer: JavaParserAnalyzer, tmp_path_factory: pytest.TempPathFactory) -> World:
-    """The shop repository analysed into a knowledge model (see tests/shop_repo.py)."""
-    from tests.helpers import analyze_paths, build_knowledge
-
+    """The shop repository (sources, a test and a README) analysed into a knowledge model."""
     root = tmp_path_factory.mktemp("shop")
     for rel, text in SHOP_FILES.items():
         path = root / rel
@@ -61,3 +67,33 @@ def shop(java_analyzer: JavaParserAnalyzer, tmp_path_factory: pytest.TempPathFac
         path.write_text(text)
     built = build_knowledge(analyze_paths(java_analyzer, root), docs_root=root)
     return World(root, built)
+
+
+@pytest.fixture
+def env(shop: World, tmp_path: Path) -> Env:
+    """The shop knowledge model stored in SQLite, with a hybrid retriever over it."""
+    db = tmp_path / "ctx.sqlite3"
+    store = KnowledgeStore(db)
+    store.replace(shop.built.repository, shop.built.graph, "fp")
+    retrieval = RetrievalStore(db)
+    vectors, embedder = InMemoryVectorStore(), HashingEmbedder()
+    k = shop.built.repository
+    reader = SourceReader(shop.root)
+    RetrievalIndexer(retrieval, vectors, embedder).index(
+        shop.repository_id, k.classes, k.methods, reader
+    )
+    return Env(shop, store, reader, HybridRetriever(retrieval, vectors, embedder))
+
+
+@pytest.fixture(scope="session")
+def project_built(java_analyzer: JavaParserAnalyzer):  # type: ignore[no-untyped-def]
+    return build_knowledge(analyze_paths(java_analyzer, PROJECT))
+
+
+@pytest.fixture
+def project_env(project_built, tmp_path: Path) -> Env:  # type: ignore[no-untyped-def]
+    store = KnowledgeStore(tmp_path / "proj.sqlite3")
+    store.replace(project_built.repository, project_built.graph, "fp")
+    world = World(PROJECT, project_built)
+    retriever = HybridRetriever(RetrievalStore(tmp_path / "proj.sqlite3"))
+    return Env(world, store, SourceReader(PROJECT), retriever)

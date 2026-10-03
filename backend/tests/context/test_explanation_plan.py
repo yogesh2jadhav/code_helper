@@ -8,8 +8,7 @@ from app.context.explanation_plan import ExplanationPlan, build_plan
 from app.knowledge.builder import BuiltKnowledge
 from app.knowledge.models import MethodKnowledge
 from tests.conftest import FIXTURES, PROJECT
-from tests.context.conftest import Env
-from tests.helpers import analyze_paths, analyze_sources, build_knowledge
+from tests.helpers import Env, analyze_paths, analyze_sources, build_knowledge
 
 
 @pytest.fixture(scope="module")
