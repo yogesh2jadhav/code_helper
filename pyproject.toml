@@ -35,6 +35,9 @@ src = ["backend"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
 [tool.ruff.lint.per-file-ignores]
 "backend/tests/**" = ["E501"]
 "backend/app/analyzer/jdk_types.py" = ["E501"]  # word-list data tables

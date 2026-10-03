@@ -628,6 +628,55 @@ class KnowledgeStore:
             rows = conn.execute(sql, (repository_id, like, like, like, query, limit)).fetchall()
         return [_method_summary(r) for r in rows]
 
+    def summaries_for(self, repository_id: str, method_ids: list[str]) -> dict[str, MethodSummary]:
+        """method_id -> summary for the ids that exist (first match when a class is duplicated)."""
+        out: dict[str, MethodSummary] = {}
+        with self._conn() as conn:
+            for start in range(0, len(method_ids), 500):
+                chunk = method_ids[start : start + 500]
+                marks = ",".join("?" * len(chunk))
+                for row in conn.execute(
+                    f"SELECT * FROM methods WHERE repository_id = ? AND method_id IN ({marks})"
+                    " ORDER BY file",
+                    [repository_id, *chunk],
+                ):
+                    out.setdefault(row["method_id"], _method_summary(row))
+        return out
+
+    def get_method_summary(self, method_pk: str) -> MethodSummary | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM methods WHERE id = ?", (method_pk,)).fetchone()
+        return _method_summary(row) if row else None
+
+    def resolve_methods(self, repository_id: str, query: str) -> list[MethodSummary]:
+        """Methods matching a human reference: a full id, `Class.method`, `Class#method`, or a name.
+
+        Exact matches win over partial ones; tests are excluded unless nothing else matches.
+        """
+        q = query.strip()
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM methods WHERE repository_id = ? AND (method_id = ? OR id = ?)",
+                (repository_id, q, q),
+            ).fetchall()
+            if not rows:
+                owner, sep, name = q.replace("#", ".").rpartition(".")
+                if sep:
+                    rows = conn.execute(
+                        "SELECT * FROM methods WHERE repository_id = ? AND name = ?"
+                        " AND (class_fqn = ? OR class_fqn LIKE ?) ORDER BY class_fqn, start_line",
+                        (repository_id, name.split("(")[0], owner, f"%.{owner}"),
+                    ).fetchall()
+            if not rows:
+                rows = conn.execute(
+                    "SELECT * FROM methods WHERE repository_id = ? AND name = ?"
+                    " ORDER BY is_test, class_fqn, start_line",
+                    (repository_id, q.split("(")[0]),
+                ).fetchall()
+        found = [_method_summary(r) for r in rows]
+        production = [m for m in found if not m.is_test]
+        return production or found
+
     def get_method(self, method_pk: str) -> MethodKnowledge | None:
         with self._conn() as conn:
             row = conn.execute("SELECT doc FROM methods WHERE id = ?", (method_pk,)).fetchone()

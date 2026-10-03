@@ -13,12 +13,17 @@ from pathlib import Path
 
 from app.analyzer.base import AnalyzerUnavailableError
 from app.config import get_settings
+from app.explain.explanation_service import AnswerInfo, ExplainOptions, ExplanationService
+from app.knowledge.source import SourceReader
+from app.knowledge.store import KnowledgeStore
+from app.llm.ollama_client import OllamaClient
 from app.logging_setup import configure_logging
 from app.services.indexing_service import Progress, ProgressFn
 from app.services.pipeline_service import PipelineService
 from app.services.repository_service import RepositoryService
 from app.services.resolution_service import NotIndexedError, ResolutionService
 from app.services.retrieval_service import RetrievalService
+from app.services.trace_service import VariableNotFoundError
 
 
 def _progress_printer() -> ProgressFn:
@@ -81,6 +86,24 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--type", action="append", dest="types", help="restrict to a document type")
     search.add_argument("--class", dest="class_name", help="restrict to a class (fully qualified)")
     search.add_argument("--bm25-only", action="store_true", help="do not use vector search")
+
+    for name, help_text in (
+        ("explain", "explain a method like a senior teammate (local LLM, analysis fallback)"),
+        ("trace", "trace how a variable's data moves through the code"),
+        ("why", "why does this code do what it does? (confirmed / likely / unknown)"),
+    ):
+        p = sub.add_parser(name, help=help_text)
+        p.add_argument("method", help="Class.method, Class#method(sig), a method name, or an id")
+        p.add_argument("--path", type=Path, help="repository root (default: SOURCE_ROOT)")
+        p.add_argument("--no-llm", action="store_true", help="print the analysis-only answer")
+        p.add_argument("--json", action="store_true", dest="as_json", help="print the full result")
+        if name == "explain":
+            p.add_argument("--depth", type=int, default=1, help="how many call levels to include")
+        if name == "trace":
+            p.add_argument("--var", required=True, help="variable, parameter or field to trace")
+            p.add_argument("--depth", type=int, default=2)
+        if name == "why":
+            p.add_argument("--lines", help="selection as START-END (default: the whole method)")
     return parser
 
 
@@ -143,6 +166,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+        if args.command in ("explain", "trace", "why"):
+            return _run_explain(args, settings)
+
         if args.command == "resolve":
             run = ResolutionService(settings).resolve(args.path)
             report: dict[str, object] = {
@@ -180,6 +206,76 @@ def main(argv: list[str] | None = None) -> int:
 
     print(result.model_dump_json(indent=2))
     return 1 if result.index.analyzer_errors else 0
+
+
+def _run_explain(args: argparse.Namespace, settings: object) -> int:
+    """explain / trace / why against the stored knowledge model."""
+    from app.config import Settings
+
+    assert isinstance(settings, Settings)
+    root = args.path or settings.source_root
+    if root is None:
+        print("error: no repository path given and SOURCE_ROOT is not configured", file=sys.stderr)
+        return 2
+    repo = RetrievalService(settings, use_vectors=False).repository_id(root)
+    store = KnowledgeStore(settings.db_path)
+    matches = store.resolve_methods(repo, args.method)
+    if not matches:
+        print(f"error: no method matches '{args.method}' (run `index` first?)", file=sys.stderr)
+        return 4
+    if len(matches) > 1:
+        print(f"'{args.method}' is ambiguous; be more specific:", file=sys.stderr)
+        for m in matches[:15]:
+            print(f"  {m.method_id}  ({m.file}:{m.start_line})", file=sys.stderr)
+        return 2
+    llm = (
+        None
+        if args.no_llm
+        else OllamaClient(
+            settings.ollama_base_url,
+            settings.ollama_chat_model,
+            timeout=settings.ollama_timeout_seconds,
+            temperature=settings.temperature,
+            context_window=settings.context_window,
+        )
+    )
+    service = ExplanationService(
+        repo,
+        store,
+        SourceReader(Path(root)),
+        settings,
+        llm,
+        RetrievalService(settings, use_vectors=False).retriever(),
+    )
+    target = matches[0].id
+    result: AnswerInfo
+    try:
+        if args.command == "explain":
+            result = service.explain(
+                target, ExplainOptions(depth=args.depth, use_llm=llm is not None)
+            )
+        elif args.command == "trace":
+            result = service.trace(target, args.var, args.depth, use_llm=llm is not None)
+        else:
+            first, _, last = (args.lines or "").partition("-")
+            result = service.why(
+                target,
+                int(first) if first else None,
+                int(last) if last else None,
+                use_llm=llm is not None,
+            )
+    except VariableNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.as_json:
+        print(result.model_dump_json(indent=2))
+        return 0
+    print(result.answer)
+    if result.warnings:
+        print("\n[warnings] " + "; ".join(result.warnings), file=sys.stderr)
+    if result.llm_error:
+        print(f"\n[llm] {result.llm_error}", file=sys.stderr)
+    return 0
 
 
 if __name__ == "__main__":
