@@ -113,11 +113,16 @@ final class MethodWalker {
         List<Model.ValueHint> args;
         Model.ValueHint initializer;
         Integer scopeEndLine;
+        int startColumn;
+        int endColumn;
+        String left;
+        String right;
+        List<String> argTexts;
 
         Model.Expression freeze() {
             return new Model.Expression(id, statementId, kind, startLine, endLine, text, name, scope, type,
                     argCount, operator, tags, receiverKind, receiverExprId, receiverType, args, initializer,
-                    scopeEndLine);
+                    scopeEndLine, startColumn, endColumn, left, right, argTexts);
         }
     }
 
@@ -143,9 +148,10 @@ final class MethodWalker {
         walk(body, null, 0);
         for (PendingHint p : pendingHints) {
             Integer id = exprIds.get(p.target());
+            Model.ValueHint current = p.index() >= 0 ? p.owner().args.get(p.index()) : p.owner().initializer;
             Model.ValueHint linked = id == null
-                    ? new Model.ValueHint("other", null, null)
-                    : new Model.ValueHint("expr", null, null, id);
+                    ? new Model.ValueHint("other", null, null, null, current.range())
+                    : current.withExprId(id);
             if (p.index() >= 0) {
                 p.owner().args.set(p.index(), linked);
             } else {
@@ -230,7 +236,8 @@ final class MethodWalker {
         if (n instanceof IfStmt s) {
             boolean elseIf = n.getParentNode().filter(p -> p instanceof IfStmt ps
                     && ps.getElseStmt().orElse(null) == n).isPresent();
-            int id = addStatement(elseIf ? "else_if" : "if", n, parent, depth, clipExpr(s.getCondition()));
+            int id = addStatement(elseIf ? "else_if" : "if", n, parent, depth, clipExpr(s.getCondition()),
+                    rangeOf(s.getCondition()));
             control(depth);
             for (Node c : n.getChildNodes()) {
                 boolean isElseIf = c instanceof IfStmt && s.getElseStmt().orElse(null) == c;
@@ -241,24 +248,32 @@ final class MethodWalker {
             String header = s.getInitialization().stream().map(Node::toString).collect(Collectors.joining(", "))
                     + "; " + s.getCompare().map(Node::toString).orElse("") + "; "
                     + s.getUpdate().stream().map(Node::toString).collect(Collectors.joining(", "));
-            childParent = addStatement("for", n, parent, depth, FileAnalyzer.clip(FileAnalyzer.oneLine(header), 200));
+            List<Node> headerNodes = new ArrayList<>(s.getInitialization());
+            s.getCompare().ifPresent(headerNodes::add);
+            headerNodes.addAll(s.getUpdate());
+            childParent = addStatement("for", n, parent, depth, FileAnalyzer.clip(FileAnalyzer.oneLine(header), 200),
+                    unionRange(headerNodes));
             control(depth);
             childDepth = depth + 1;
         } else if (n instanceof ForEachStmt s) {
             childParent = addStatement("foreach", n, parent, depth, FileAnalyzer.clip(
-                    FileAnalyzer.oneLine(s.getVariable() + " : " + s.getIterable()), 200));
+                    FileAnalyzer.oneLine(s.getVariable() + " : " + s.getIterable()), 200),
+                    unionRange(List.of(s.getVariable(), s.getIterable())));
             control(depth);
             childDepth = depth + 1;
         } else if (n instanceof WhileStmt s) {
-            childParent = addStatement("while", n, parent, depth, clipExpr(s.getCondition()));
+            childParent = addStatement("while", n, parent, depth, clipExpr(s.getCondition()),
+                    rangeOf(s.getCondition()));
             control(depth);
             childDepth = depth + 1;
         } else if (n instanceof DoStmt s) {
-            childParent = addStatement("do", n, parent, depth, clipExpr(s.getCondition()));
+            childParent = addStatement("do", n, parent, depth, clipExpr(s.getCondition()),
+                    rangeOf(s.getCondition()));
             control(depth);
             childDepth = depth + 1;
         } else if (n instanceof SwitchStmt s) {
-            childParent = addStatement("switch", n, parent, depth, clipExpr(s.getSelector()));
+            childParent = addStatement("switch", n, parent, depth, clipExpr(s.getSelector()),
+                    rangeOf(s.getSelector()));
             control(depth);
             childDepth = depth + 1;
         } else if (n instanceof TryStmt) {
@@ -271,14 +286,18 @@ final class MethodWalker {
                     labels.isEmpty() ? null : FileAnalyzer.clip(FileAnalyzer.oneLine(labels), 200));
         } else if (n instanceof CatchClause c) {
             childParent = addStatement("catch", n, parent, depth,
-                    FileAnalyzer.clip(FileAnalyzer.oneLine(c.getParameter().toString()), 200));
+                    FileAnalyzer.clip(FileAnalyzer.oneLine(c.getParameter().toString()), 200),
+                    rangeOf(c.getParameter()));
             Ex ex = add("variable_declaration", c.getParameter(), childParent, c.getParameter().getNameAsString(),
                     null, c.getParameter().getType().asString(), null, null, List.of("catch_param"));
             ex.scopeEndLine = line(c, false);
         } else if (n instanceof ReturnStmt s) {
-            childParent = addStatement("return", n, parent, depth, s.getExpression().map(MethodWalker::clipExpr).orElse(null));
+            childParent = addStatement("return", n, parent, depth,
+                    s.getExpression().map(MethodWalker::clipExpr).orElse(null),
+                    s.getExpression().map(MethodWalker::rangeOf).orElse(null));
         } else if (n instanceof ThrowStmt s) {
-            childParent = addStatement("throw", n, parent, depth, clipExpr(s.getExpression()));
+            childParent = addStatement("throw", n, parent, depth, clipExpr(s.getExpression()),
+                    rangeOf(s.getExpression()));
         } else if (n instanceof BreakStmt s) {
             childParent = addStatement("break", n, parent, depth, s.getLabel().map(Object::toString).orElse(null));
         } else if (n instanceof ContinueStmt s) {
@@ -309,8 +328,13 @@ final class MethodWalker {
     // ---- statements --------------------------------------------------------------------------
 
     private int addStatement(String kind, Node n, Integer parent, int depth, String text) {
+        return addStatement(kind, n, parent, depth, text, null);
+    }
+
+    private int addStatement(String kind, Node n, Integer parent, int depth, String text, Model.Range value) {
         int id = nextStatementId++;
-        statements.add(new Model.Statement(id, parent, kind, line(n, true), line(n, false), depth, text));
+        statements.add(new Model.Statement(id, parent, kind, line(n, true), line(n, false), depth, text,
+                column(n, true), column(n, false), value));
         return id;
     }
 
@@ -325,8 +349,14 @@ final class MethodWalker {
             Ex ex = add("field_access", e, stmt, f.getNameAsString(), f.getScope().toString(), null, null, null, List.of());
             setReceiver(ex, f.getScope());
         } else if (e instanceof AssignExpr a) {
-            add("assignment", e, stmt, FileAnalyzer.clip(FileAnalyzer.oneLine(a.getTarget().toString()), 120),
+            Ex ex = add("assignment", e, stmt, FileAnalyzer.clip(FileAnalyzer.oneLine(a.getTarget().toString()), 120),
                     null, null, null, a.getOperator().asString(), List.of());
+            ex.left = clipExpr(a.getTarget());
+            ex.right = clipExpr(a.getValue());
+            ex.initializer = hint(a.getValue());
+            if (ex.initializer.kind().equals("expr")) {
+                pendingHints.add(new PendingHint(ex, -1, unwrap(a.getValue())));
+            }
         } else if (e instanceof UnaryExpr u && isIncDec(u)) {
             add("assignment", e, stmt, FileAnalyzer.clip(FileAnalyzer.oneLine(u.getExpression().toString()), 120),
                     null, null, null, incDecSymbol(u), List.of());
@@ -335,6 +365,7 @@ final class MethodWalker {
                     o.getArguments().size(), null,
                     o.getAnonymousClassBody().isPresent() ? List.of("anonymous_class") : List.of());
             setArgs(ex, o.getArguments());
+            ex.argTexts = o.getArguments().stream().map(MethodWalker::clipArg).collect(Collectors.toList());
         } else if (e instanceof LambdaExpr l) {
             add("lambda", e, stmt, null, null, null, l.getParameters().size(), null,
                     predicateArgs.contains(e) ? List.of("predicate") : List.of());
@@ -368,6 +399,7 @@ final class MethodWalker {
                 Ex ex = add("variable_declaration", d, stmt, d.getNameAsString(), null, d.getType().asString(),
                         null, null, tags);
                 ex.scopeEndLine = declarationScopeEnd(v);
+                d.getInitializer().ifPresent(init -> ex.right = clipExpr(init));
                 d.getInitializer().ifPresent(init -> {
                     ex.initializer = hint(init);
                     if (ex.initializer.kind().equals("expr")) {
@@ -401,16 +433,21 @@ final class MethodWalker {
 
     private void binary(BinaryExpr b, Integer stmt) {
         BinaryExpr.Operator op = b.getOperator();
+        String kind;
         switch (op) {
             case EQUALS, NOT_EQUALS -> {
                 boolean nullSide = b.getLeft() instanceof NullLiteralExpr || b.getRight() instanceof NullLiteralExpr;
-                add(nullSide ? "null_check" : "comparison", b, stmt, null, null, null, null, op.asString(), List.of());
+                kind = nullSide ? "null_check" : "comparison";
             }
-            case LESS, GREATER, LESS_EQUALS, GREATER_EQUALS ->
-                add("comparison", b, stmt, null, null, null, null, op.asString(), List.of());
-            case AND, OR -> add("logical", b, stmt, null, null, null, null, op.asString(), List.of());
-            default -> { }
+            case LESS, GREATER, LESS_EQUALS, GREATER_EQUALS -> kind = "comparison";
+            case AND, OR -> kind = "logical";
+            default -> {
+                return;
+            }
         }
+        Ex ex = add(kind, b, stmt, null, null, null, null, op.asString(), List.of());
+        ex.left = clipExpr(b.getLeft());
+        ex.right = clipExpr(b.getRight());
     }
 
     private void methodCall(MethodCallExpr c, Integer stmt) {
@@ -450,6 +487,7 @@ final class MethodWalker {
                 null, c.getArguments().size(), null, tags);
         setReceiver(ex, c.getScope().orElse(null));
         setArgs(ex, c.getArguments());
+        ex.argTexts = c.getArguments().stream().map(MethodWalker::clipArg).collect(Collectors.toList());
     }
 
     /** "stream" / "optional" if the receiver chain starts from a recognisable source, else null. */
@@ -515,6 +553,10 @@ final class MethodWalker {
     }
 
     private static Model.ValueHint hint(Expression raw) {
+        return plainHint(raw).withRange(rangeOf(raw));
+    }
+
+    private static Model.ValueHint plainHint(Expression raw) {
         Expression e = unwrap(raw);
         if (e instanceof NullLiteralExpr) return new Model.ValueHint("literal", "null", null);
         if (e instanceof StringLiteralExpr || e instanceof TextBlockLiteralExpr) return new Model.ValueHint("literal", "String", null);
@@ -529,7 +571,7 @@ final class MethodWalker {
         }
         if (e instanceof UnaryExpr u && (u.getOperator() == UnaryExpr.Operator.MINUS
                 || u.getOperator() == UnaryExpr.Operator.PLUS)) {
-            Model.ValueHint inner = hint(u.getExpression());
+            Model.ValueHint inner = plainHint(u.getExpression());
             if (inner.kind().equals("literal") && !inner.type().equals("String") && !inner.type().equals("null")
                     && !inner.type().equals("boolean") && !inner.type().equals("char")) {
                 return inner;
@@ -580,6 +622,8 @@ final class MethodWalker {
         ex.kind = kind;
         ex.startLine = line(n, true);
         ex.endLine = line(n, false);
+        ex.startColumn = column(n, true);
+        ex.endColumn = column(n, false);
         ex.text = clipExpr(n);
         ex.name = name;
         ex.scope = scope;
@@ -609,6 +653,40 @@ final class MethodWalker {
 
     private static String clipExpr(Node n) {
         return FileAnalyzer.clip(FileAnalyzer.oneLine(n.toString()), 200);
+    }
+
+    private static String clipArg(Expression e) {
+        return FileAnalyzer.clip(FileAnalyzer.oneLine(e.toString()), 160);
+    }
+
+    private static Model.Range unionRange(List<? extends Node> nodes) {
+        Model.Range out = null;
+        for (Node n : nodes) {
+            Model.Range r = rangeOf(n);
+            if (r == null) continue;
+            if (out == null) {
+                out = r;
+            } else {
+                boolean earlier = r.startLine() < out.startLine()
+                        || (r.startLine() == out.startLine() && r.startColumn() < out.startColumn());
+                boolean later = r.endLine() > out.endLine()
+                        || (r.endLine() == out.endLine() && r.endColumn() > out.endColumn());
+                out = new Model.Range(
+                        earlier ? r.startLine() : out.startLine(), earlier ? r.startColumn() : out.startColumn(),
+                        later ? r.endLine() : out.endLine(), later ? r.endColumn() : out.endColumn());
+            }
+        }
+        return out;
+    }
+
+    private static Model.Range rangeOf(Node n) {
+        return n.getRange()
+                .map(r -> new Model.Range(r.begin.line, r.begin.column, r.end.line, r.end.column))
+                .orElse(null);
+    }
+
+    private static int column(Node n, boolean begin) {
+        return n.getRange().map(r -> begin ? r.begin.column : r.end.column).orElse(-1);
     }
 
     private static int line(Node n, boolean begin) {

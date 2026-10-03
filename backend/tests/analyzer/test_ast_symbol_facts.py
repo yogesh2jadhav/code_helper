@@ -181,3 +181,57 @@ def test_inner_method_parameters_and_local_class_marker(flow: Method) -> None:
     assert inner_call.receiver_kind == "expr"
     outer_helper = [e for e in flow.expressions if e.kind == "method_call" and e.name == "helper"]
     assert [("in_local_class" in e.tags) for e in outer_helper] == [False, False, True]
+
+
+def test_positions_header_ranges_and_operand_text(
+    java_analyzer: JavaParserAnalyzer, tmp_path: Path
+) -> None:
+    path = tmp_path / "Pos.java"
+    path.write_text(
+        "class Pos {\n"
+        "    int f(int a, int b) {\n"
+        "        int x = a + g(b), y = 2;\n"
+        "        x = y * 3;\n"
+        "        if (a > b && b != 0) {\n"
+        "            return x + y;\n"
+        "        }\n"
+        "        h(a, g(b), \"s\");\n"
+        "        throw new IllegalStateException(\"bad\");\n"
+        "    }\n"
+        "    int g(int v) { return v; }\n"
+        "    void h(int p, int q, String r) {}\n"
+        "}\n"
+    )
+    (result,) = java_analyzer.analyze_files([path])
+    f = result.types[0].methods[0]
+
+    decls = {e.name: e for e in f.expressions if e.kind == "variable_declaration"}
+    assert decls["x"].right == "a + g(b)" and decls["y"].right == "2"
+    x_init = decls["x"].initializer
+    assert x_init is not None and x_init.range is not None
+    assert (x_init.range.start_line, x_init.range.start_column, x_init.range.end_column) == (3, 17, 24)
+    # the initializer range contains the call g(b) and the name a, but not the declarator name
+    inner = {(e.kind, e.name) for e in f.expressions
+             if e.kind in {"name_ref", "method_call"} and x_init.range.contains(e.range)}
+    assert inner == {("name_ref", "a"), ("method_call", "g"), ("name_ref", "b")}
+
+    (assign,) = [e for e in f.expressions if e.kind == "assignment"]
+    assert (assign.left, assign.right) == ("x", "y * 3")
+    assert assign.initializer is not None and assign.initializer.range is not None
+
+    ops = {e.operator: (e.left, e.right) for e in f.expressions if e.kind in {"comparison", "logical", "null_check"}}
+    assert ops[">"] == ("a", "b") and ops["!="] == ("b", "0") and ops["&&"] == ("a > b", "b != 0")
+
+    ret = next(s for s in f.statements if s.kind == "return")
+    assert ret.header_range is not None and ret.range.contains(ret.header_range)
+    assert (ret.header_range.start_line, ret.header_range.end_column) == (6, 24)
+    thrown = next(s for s in f.statements if s.kind == "throw")
+    assert thrown.header_range is not None
+
+    h = next(e for e in f.expressions if e.kind == "method_call" and e.name == "h")
+    assert h.arg_texts == ["a", "g(b)", '"s"']
+    assert h.args is not None and [a.kind for a in h.args] == ["name", "expr", "literal"]
+    assert all(a.range is not None for a in h.args)
+    nested = next(e for e in f.expressions if e.kind == "method_call" and e.name == "g" and e.start_line == 8)
+    assert h.args[1].expr_id == nested.id and h.args[1].range is not None
+    assert h.args[1].range.contains(nested.range)
