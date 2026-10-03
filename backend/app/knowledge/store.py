@@ -768,6 +768,43 @@ class KnowledgeStore:
                 (callee_id, param),
             ).fetchall()
 
+    def repository_of_method(self, method_pk: str) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT repository_id FROM methods WHERE id = ?", (method_pk,)
+            ).fetchone()
+        return row["repository_id"] if row else None
+
+    def repository_of_class(self, class_id: str) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT repository_id FROM classes WHERE id = ?", (class_id,)
+            ).fetchone()
+        return row["repository_id"] if row else None
+
+    def result_uses(self, repository_id: str, method_id: str) -> list[sqlite3.Row]:
+        """Data-flow edges in callers where the result of `method_id` is consumed."""
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT e.target_kind, e.target_name, e.target_symbol, e.via, e.line,"
+                " m.method_id AS caller_id, m.id AS caller_pk"
+                " FROM data_flow_edges e JOIN methods m ON m.id = e.method_pk"
+                " WHERE m.repository_id = ? AND e.source_kind = 'call_result'"
+                " AND e.source_symbol = ? ORDER BY m.method_id, e.line",
+                (repository_id, method_id),
+            ).fetchall()
+
+    def variable_writers(self, repository_id: str, symbol_id: str) -> list[sqlite3.Row]:
+        """Methods whose lifecycle for the variable/field `symbol_id` includes a modification."""
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT m.method_id, m.id AS method_pk, v.lifecycle FROM variables v"
+                " JOIN methods m ON m.id = v.method_pk"
+                " WHERE m.repository_id = ? AND v.symbol_id = ? AND v.lifecycle LIKE '%modified%'"
+                " ORDER BY m.method_id",
+                (repository_id, symbol_id),
+            ).fetchall()
+
     def counts(self, repository_id: str) -> dict[str, int]:
         with self._conn() as conn:
 

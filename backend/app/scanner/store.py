@@ -92,6 +92,18 @@ class ScanStore:
                 ],
             )
 
+    def get_file(self, file_id: str) -> SourceFile | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute("SELECT * FROM source_files WHERE id = ?", (file_id,)).fetchone()
+        return _row_to_file(row) if row else None
+
+    def repository_root(self, repository_id: str) -> str | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT root_path FROM repositories WHERE id = ?", (repository_id,)
+            ).fetchone()
+        return row["root_path"] if row else None
+
     def list_files(self, repository_id: str, limit: int, offset: int) -> list[SourceFile]:
         with closing(self._connect()) as conn:
             rows = conn.execute(
