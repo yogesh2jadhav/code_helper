@@ -107,6 +107,10 @@ evidence supports it. Mark it as inference if it rests only on names and structu
 - "Important rules": each rule with its condition, its constants, and where it is (cite). For \
 every constant or condition whose origin the material does not explain, say its reason is not \
 established.
+- Every bullet or numbered item in "Major processing stages", "Important rules", "Important \
+dependencies" and "Output" must end with at least one [E#] label from the material.
+- "What to be careful about": list only the risks given in the analysis. Do not name exceptions or \
+failure modes the analysis did not report.
 - "Evidence and unknowns": state what the code establishes, what you inferred, and what the \
 material does not establish.
 """

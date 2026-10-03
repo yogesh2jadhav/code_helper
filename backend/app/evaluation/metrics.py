@@ -228,6 +228,12 @@ _LINE_REF = re.compile(r"\bL\d+(?:-\d+)?\b")
 _LIST_MARKER = re.compile(r"^\s*\d+[.)]\s+", re.MULTILINE)
 _CITE = re.compile(r"\[E\d+(?:\s*[,;]\s*E\d+)*\]")
 _TOKEN = re.compile(r"[A-Za-z_][\w]*|\d+(?:\.\d+)?")
+# Language words and primitive types need no support in the source: a method that returns a boolean
+# expression may correctly be described as returning `true` or `false`.
+_JAVA_WORDS = {
+    "true", "false", "null", "void", "int", "long", "short", "byte", "char", "float", "double",
+    "boolean", "this", "return", "if", "else", "for", "while", "switch", "case", "default",
+}  # fmt: skip
 _CLAIM_SECTIONS = {
     "What this method does",
     "Major processing stages",
@@ -279,7 +285,7 @@ def claim_metrics(
         for token in _BACKTICK.findall(text):
             checked += 1
             words = [w.lower() for w in _TOKEN.findall(token)]
-            if words and not all(w in support for w in words):
+            if words and not all(w in support or w in _JAVA_WORDS for w in words):
                 unsupported.append(f"`{token}` ({section.title})")
         plain = _BACKTICK.sub(" ", _LINE_REF.sub(" ", _LIST_MARKER.sub("", text)))
         for number in _NUMBER.findall(plain):

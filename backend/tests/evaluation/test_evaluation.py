@@ -82,6 +82,20 @@ def test_a_grounded_answer_has_no_unsupported_claims(env: Env, isolated_settings
     assert metrics.hallucination_rate == 0.0 and metrics.invalid_citations == 0
 
 
+def test_language_words_need_no_support_but_invented_exceptions_do(
+    env: Env, isolated_settings: Settings
+) -> None:
+    answer = (
+        "## What to be careful about\n"
+        "- It can return `true` or `false` or `null` [E1].\n"
+        "- It may throw `NumberFormatException` [E1].\n"
+    )
+    knowledge, source, result = explain_with(env, isolated_settings, answer)
+    metrics = evaluate_method(knowledge, source, result, EXPECTED)
+    assert metrics.unsupported_claims == ["`NumberFormatException` (What to be careful about)"]
+    assert metrics.checked_claims == 4
+
+
 def test_uncited_claim_lines_lower_evidence_coverage(env: Env, isolated_settings: Settings) -> None:
     answer = "## Output\n- Returns the fee [E1].\n- Also returns something else.\n"
     knowledge, source, result = explain_with(env, isolated_settings, answer)

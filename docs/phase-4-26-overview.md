@@ -91,6 +91,13 @@ lambda parameter types are not inferred) and rule coverage is 92% on `enterprise
 lambda, `c -> c.getAmount() > 14`, is not extracted as a threshold). Both are known gaps and are asserted
 in `backend/tests/evaluation/test_evaluation.py`; closing them should change those assertions.
 
+With `--llm` (qwen2.5-coder:7b, `basic`, 10 methods): purpose, structure, data flow, rules and unknowns
+stay at 100% (the model adds wording, not facts); evidence coverage was **27%** and unsupported claims
+**12 of 169 (7%)**, mostly speculative exception names (`NullPointerException`). After telling the model to
+end every bullet in the claim sections with a citation and to list only the risks the analysis reported,
+the same run gave **43%** evidence coverage and **7 of 180 (4%)** unsupported claims. The model still
+sometimes adds exceptions the analysis never reported; the evaluation reports them rather than hiding them.
+
 ## Phases 23–26
 
 - **Incremental analysis.** Files are keyed by content hash. Unchanged files skip parsing and never
