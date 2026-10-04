@@ -50,8 +50,8 @@ Install the tools:
 Ollama (for the LLM phases): install from https://ollama.com (Windows: `winget install Ollama.Ollama`),
 then `ollama pull qwen2.5-coder:7b` and `ollama pull nomic-embed-text`.
 
-**`make` is optional.** Every `make X` in this README has a cross-platform equivalent,
-`python run.py X`, which is what to use on Windows (see [No make](#no-make-windows-or-anywhere)).
+All commands below use `python run.py <task>`, a small task runner that works the same on Windows,
+macOS and Linux. No `make` is needed (see [Task runner](#task-runner)).
 
 ## Setup from a fresh clone
 
@@ -85,14 +85,14 @@ then `ollama pull qwen2.5-coder:7b` and `ollama pull nomic-embed-text`.
 4. **Build the Java analyzer** (produces `java-analyzer/target/java-analyzer.jar`)
 
    ```bash
-   make analyzer            # or, anywhere: python run.py analyzer
+   python run.py analyzer
    ```
 
-   The build pins JDK 17 through `JDK17_HOME`, even if Maven's default JDK is newer. Override the
-   location if yours differs:
+   Maven uses whatever JDK `JAVA_HOME` points to. To build with a specific JDK 17 (for example when your
+   default is newer), set `JDK17_HOME`:
 
    ```bash
-   make analyzer JDK17_HOME=/path/to/jdk17/Contents/Home
+   JDK17_HOME=/path/to/jdk17/Contents/Home python run.py analyzer     # macOS / Linux
    ```
 
    ```powershell
@@ -109,7 +109,7 @@ then `ollama pull qwen2.5-coder:7b` and `ollama pull nomic-embed-text`.
 6. **Verify the install**
 
    ```bash
-   make check               # or: python run.py check
+   python run.py check
    ```
 
    This runs ruff, mypy and pytest. Expect all green (490+ tests).
@@ -119,8 +119,8 @@ then `ollama pull qwen2.5-coder:7b` and `ollama pull nomic-embed-text`.
 Open two terminals.
 
 ```bash
-make backend      # API on http://localhost:8000      (or: python run.py backend)
-make frontend     # UI  on http://localhost:5173      (or: python run.py frontend)
+python run.py backend      # API on http://localhost:8000
+python run.py frontend     # UI  on http://localhost:5173
 ```
 
 Check it works:
@@ -133,7 +133,7 @@ curl http://localhost:5173/health           # same, through the Vite proxy
 (PowerShell: `Invoke-RestMethod http://localhost:8000/health`.)
 
 Interactive API docs are at http://localhost:8000/docs. The frontend proxies `/health` and `/api` to
-the backend; point it elsewhere with `BACKEND_URL=http://host:port make frontend` (PowerShell: `$env:BACKEND_URL="http://host:port"; python run.py frontend`).
+the backend; point it elsewhere with `BACKEND_URL=http://host:port python run.py frontend` (PowerShell: `$env:BACKEND_URL="http://host:port"; python run.py frontend`).
 
 ## Use it
 
@@ -143,8 +143,7 @@ Indexing parses every Java file and stores the result, which takes a while on a 
 it is a CLI command rather than a blocking HTTP call.
 
 ```bash
-make index SRC=/absolute/path/to/your/java/repo
-# or, anywhere:  python run.py index /absolute/path/to/your/java/repo [--force] [--batch-size N]
+python run.py index /absolute/path/to/your/java/repo [--force] [--batch-size N]
 # Windows path:  python run.py index C:\code\my-java-repo
 ```
 
@@ -161,7 +160,7 @@ resumable**: results are saved after every batch and keyed by file hash, so
 path/config, `3` analyzer unavailable (no jar or JDK < 17). Reference timing: 1,700 generated classes
 indexed cold in about 9 s on a laptop, producing a ~17 MB SQLite database.
 
-Quick, analysis-free file discovery: `make scan SRC=/path/to/repo` (counts of added, changed,
+Quick, analysis-free file discovery: `python run.py scan /path/to/repo` (counts of added, changed,
 unchanged, removed and skipped files).
 
 ### Resolve symbols
@@ -169,7 +168,7 @@ unchanged, removed and skipped files).
 After indexing, resolve every reference (types, names, fields, calls, constructors) to its target:
 
 ```bash
-make resolve SRC=/absolute/path/to/your/java/repo          # summary (or: python run.py resolve PATH)
+python run.py resolve /absolute/path/to/your/java/repo          # summary
 python run.py resolve /path/to/repo --examples 3             # + examples
 ```
 
@@ -182,7 +181,7 @@ the known limits are in [docs/phase-3-symbol-resolution.md](docs/phase-3-symbol-
 
 ### Use the web UI
 
-`make backend` and `make frontend`, then open http://localhost:5173.
+`python run.py backend` and `python run.py frontend`, then open http://localhost:5173.
 
 - **Repository** page: start an index job (path, optional re-analyze), watch progress, see counts and
   whether the local model is ready.
@@ -192,7 +191,7 @@ the known limits are in [docs/phase-3-symbol-resolution.md](docs/phase-3-symbol-
   outputs, control flow, data flow, rules, callers/callees, risks, unknowns, evidence). Citations in
   answers are links that jump to the cited source. Follow-up questions keep the method context.
 
-Frontend checks: `make frontend-test` (typecheck + vitest).
+Frontend checks: `python run.py frontend-test` (typecheck + vitest).
 
 ### Index through the REST API (background job)
 
@@ -326,33 +325,30 @@ All settings come from environment variables or `.env`. Nothing machine-specific
 
 ## Development
 
-### No make (Windows, or anywhere)
+### Task runner
 
-`python run.py <task>` has the same tasks as the Makefile and works on Windows, macOS and Linux:
-`install`, `analyzer`, `test`, `lint`, `typecheck`, `check`, `backend`, `frontend`, `frontend-test`,
-`index PATH`, `scan PATH`, `resolve PATH`, and `cli <command> ...` for anything else
-(`python run.py cli explain ShippingCalculator.shippingFee --path C:\repo`). Run `python run.py` alone
-to list them. On Windows the virtualenv tools live in `.venv\Scripts` rather than `.venv/bin`.
+`python run.py` lists the tasks (`python run.py <task> [args]`). On Windows the virtualenv tools live in
+`.venv\Scripts` rather than `.venv/bin`; the runner handles that.
 
 | Command | Does |
 |---|---|
-| `make install` | `uv sync` plus `npm install` |
-| `make analyzer` | rebuild the Java analyzer jar (rerun after changing `java-analyzer/`) |
-| `make test` | pytest |
-| `make lint` | ruff |
-| `make typecheck` | mypy (strict) |
-| `make check` | lint + typecheck + test |
-| `make backend` / `make frontend` | dev servers |
-| `make index SRC=...` / `make scan SRC=...` | index or scan a repository from the CLI |
-| `make resolve SRC=...` | resolve symbols over the indexed repository |
-| `make frontend-test` | frontend typecheck + vitest |
+| `python run.py install` | `uv sync` plus `npm install` |
+| `python run.py analyzer` | rebuild the Java analyzer jar (rerun after changing `java-analyzer/`) |
+| `python run.py test` | pytest |
+| `python run.py lint` | ruff |
+| `python run.py typecheck` | mypy (strict) |
+| `python run.py check` | lint + typecheck + test |
+| `python run.py backend` / `frontend` | dev servers |
+| `python run.py index PATH` / `scan PATH` / `resolve PATH` | index, scan or resolve a repository |
+| `python run.py cli <command> ...` | any CLI command, e.g. `cli explain Class.method --path REPO` |
+| `python run.py frontend-test` | frontend typecheck + vitest |
 
 The analyzer tests run against the real jar and **fail, not skip,** if the jar or a JDK 17+ is
 missing, so a broken setup is visible. Frontend production build: `cd frontend && npm run build`.
 
 ### Project workflow
 
-Work proceeds phase by phase: implement, add tests, run `make check`, demonstrate output, review, then
+Work proceeds phase by phase: implement, add tests, run `python run.py check`, demonstrate output, review, then
 move on. Tests are never weakened to make them pass.
 
 ## Layout
@@ -387,17 +383,16 @@ data/             runtime storage (git-ignored)
 
 | Symptom | Fix |
 |---|---|
-| `analyzer jar not found ... make analyzer` | run `make analyzer` (or `python run.py analyzer`) |
+| `analyzer jar not found ... run.py analyzer` | run `python run.py analyzer` |
 | `uv` / `mvn` / `npm` "not recognized" (Windows) | install it (see Requirements) and reopen PowerShell so PATH refreshes |
-| `make` "not recognized" | not needed: use `python run.py <task>` |
 | `cannot run 'java'` or `Unable to locate a Java Runtime` | set `JAVA_BIN` in `.env` to a JDK 17+ binary |
 | `Java 17+ required, ... is Java N` | point `JAVA_BIN` at a newer JDK |
-| `make analyzer` builds with the wrong JDK or fails | pass `JDK17_HOME=...`; `/usr/libexec/java_home -V` lists installed JDKs |
+| `python run.py analyzer` builds with the wrong JDK or fails | pass `JDK17_HOME=...`; `/usr/libexec/java_home -V` lists installed JDKs |
 | Scan/index returns HTTP 400 (or CLI exit 2) | the path is not a directory, or neither `path` nor `SOURCE_ROOT` was given |
 | `409` when starting an index | that repository is already being indexed; poll the job id in the response |
 | CLI exit code 1 | some files hit `analyzer_error`; re-run, they are retried automatically |
 | `resolve` exits 4 | run `index` first; analyses written by an older analyzer version are redone by the next `index` |
-| Frontend shows "backend unreachable" | start `make backend` first; check `BACKEND_URL` |
+| Frontend shows "backend unreachable" | start `python run.py backend` first; check `BACKEND_URL` |
 | Explanations say "LLM generation unavailable" | start Ollama and `ollama pull` the models named in `.env`; the Repository page shows the status |
 | `explain` exits 4 | run `index` first; `explain` takes `Class.method`, `Class#method(sig)` or a unique method name |
 | Search says vector search is not configured | run `embed`; with Ollama down, `--bm25-only` still works |
