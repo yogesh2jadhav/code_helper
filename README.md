@@ -299,6 +299,11 @@ All settings come from environment variables or `.env`. Nothing machine-specific
 
 ## Development
 
+**No `make`** (for example on Windows)? Use `python run.py <task>` instead; it has the same tasks and
+works everywhere: `python run.py install`, `analyzer`, `check`, `backend`, `frontend`, `frontend-test`,
+`index PATH`, `scan PATH`, `resolve PATH`. Wherever this README says `make X`, run `python run.py X`.
+On Windows the virtualenv tools live in `.venv\Scripts` rather than `.venv/bin`.
+
 | Command | Does |
 |---|---|
 | `make install` | `uv sync` plus `npm install` |
