@@ -18,7 +18,7 @@ def make_scanner(tmp_path: Path, **kw: int) -> RepositoryScanner:
 def write(root: Path, rel: str, text: str = "class A {}") -> Path:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_bytes(text.encode("utf-8"))  # no newline translation: sizes must be exact
     return path
 
 
@@ -70,7 +70,10 @@ def test_missing_directory_raises(tmp_path: Path) -> None:
 def test_duplicate_paths_via_symlink_are_reported_once(tmp_path: Path, repo: Path) -> None:
     original = write(repo, "a/Original.java")
     (repo / "b").mkdir()
-    (repo / "b" / "Alias.java").symlink_to(original)
+    try:
+        (repo / "b" / "Alias.java").symlink_to(original)
+    except OSError:  # Windows without symlink privilege (developer mode / admin)
+        pytest.skip("cannot create symlinks on this machine")
     result = make_scanner(tmp_path).scan(repo)
     assert len(result.files) == 1
     assert [s.reason for s in result.skipped] == ["duplicate_path"]

@@ -82,8 +82,10 @@ class JobManager:
 
     def list(self) -> list[Job]:
         with self._lock:
+            # Newest first. Clocks can tie (Windows ticks at ~15 ms), so start from reversed
+            # insertion order: sorted() is stable, so later jobs stay ahead on equal times.
             return sorted(
-                (j.model_copy() for j in self._jobs.values()),
+                (j.model_copy() for j in reversed(list(self._jobs.values()))),
                 key=lambda j: j.created_at,
                 reverse=True,
             )
