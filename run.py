@@ -79,6 +79,10 @@ TASKS: dict[str, tuple[str, Callable[[list[str]], None]]] = {
             run(["npm", "test"], cwd=ROOT / "frontend"),
         )[-1],
     ),
+    "cli": (
+        "any CLI command: cli explain Class.method --path REPO",
+        lambda a: cli(a[0], a[1:]) if a else print("usage: python run.py cli <command> [args]"),
+    ),
     "scan": ("scan [PATH]", lambda a: cli("scan", a)),
     "index": ("index [PATH] [--force]", lambda a: cli("index", a)),
     "resolve": ("resolve [PATH]", lambda a: cli("resolve", a)),

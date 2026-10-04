@@ -35,7 +35,23 @@ Design notes: [Phases 0–2 and the AST wire format](docs/phase-0-2.md), [Phase 
 | Node.js | 20+ | frontend |
 | Ollama | any | LLM and embeddings (needed from the LLM phases onward, not for Phases 0–2) |
 
-macOS with Homebrew: `brew install uv openjdk@17 maven node`.
+Install the tools:
+
+- **macOS (Homebrew):** `brew install uv openjdk@17 maven node`
+- **Windows (PowerShell):**
+  ```powershell
+  winget install --id=astral-sh.uv -e
+  winget install EclipseAdoptium.Temurin.17.JDK
+  winget install Apache.Maven
+  winget install OpenJS.NodeJS.LTS
+  ```
+  Then **close and reopen PowerShell** so the new commands are on your PATH.
+
+Ollama (for the LLM phases): install from https://ollama.com (Windows: `winget install Ollama.Ollama`),
+then `ollama pull qwen2.5-coder:7b` and `ollama pull nomic-embed-text`.
+
+**`make` is optional.** Every `make X` in this README has a cross-platform equivalent,
+`python run.py X`, which is what to use on Windows (see [No make](#no-make-windows-or-anywhere)).
 
 ## Setup from a fresh clone
 
@@ -58,34 +74,42 @@ macOS with Homebrew: `brew install uv openjdk@17 maven node`.
    cp .env.example .env
    ```
 
+   (Windows PowerShell: `Copy-Item .env.example .env`.)
+
    Edit `.env` and set at least `JAVA_BIN` to a JDK 17+ `java` binary, for example
-   `/opt/homebrew/opt/openjdk@17/bin/java`. On macOS the bare `java` is often a stub that fails, which
+   `/opt/homebrew/opt/openjdk@17/bin/java` on macOS or
+   `C:\Program Files\Eclipse Adoptium\jdk-17.0.x-hotspot\bin\java.exe` on Windows. On macOS the bare `java` is often a stub that fails, which
    is why this is explicit. If `JAVA_BIN` is left as `java`, `$JAVA_HOME/bin/java` is used when
    `JAVA_HOME` is set. `.env` is git-ignored.
 
 4. **Build the Java analyzer** (produces `java-analyzer/target/java-analyzer.jar`)
 
    ```bash
-   make analyzer
+   make analyzer            # or, anywhere: python run.py analyzer
    ```
 
-   The Makefile pins JDK 17 for the build through `JDK17_HOME`, even if Maven's default JDK is newer.
-   Override the location if yours differs:
+   The build pins JDK 17 through `JDK17_HOME`, even if Maven's default JDK is newer. Override the
+   location if yours differs:
 
    ```bash
    make analyzer JDK17_HOME=/path/to/jdk17/Contents/Home
    ```
 
+   ```powershell
+   $env:JDK17_HOME = "C:\Program Files\Eclipse Adoptium\jdk-17.0.x-hotspot"
+   python run.py analyzer
+   ```
+
 5. **Install frontend dependencies**
 
    ```bash
-   cd frontend && npm install && cd ..
+   cd frontend && npm install && cd ..      # PowerShell: cd frontend; npm install; cd ..
    ```
 
 6. **Verify the install**
 
    ```bash
-   make check
+   make check               # or: python run.py check
    ```
 
    This runs ruff, mypy and pytest. Expect all green (490+ tests).
@@ -95,8 +119,8 @@ macOS with Homebrew: `brew install uv openjdk@17 maven node`.
 Open two terminals.
 
 ```bash
-make backend      # API on http://localhost:8000
-make frontend     # UI  on http://localhost:5173
+make backend      # API on http://localhost:8000      (or: python run.py backend)
+make frontend     # UI  on http://localhost:5173      (or: python run.py frontend)
 ```
 
 Check it works:
@@ -106,8 +130,10 @@ curl http://localhost:8000/health           # {"status":"healthy"}
 curl http://localhost:5173/health           # same, through the Vite proxy
 ```
 
+(PowerShell: `Invoke-RestMethod http://localhost:8000/health`.)
+
 Interactive API docs are at http://localhost:8000/docs. The frontend proxies `/health` and `/api` to
-the backend; point it elsewhere with `BACKEND_URL=http://host:port make frontend`.
+the backend; point it elsewhere with `BACKEND_URL=http://host:port make frontend` (PowerShell: `$env:BACKEND_URL="http://host:port"; python run.py frontend`).
 
 ## Use it
 
@@ -118,7 +144,8 @@ it is a CLI command rather than a blocking HTTP call.
 
 ```bash
 make index SRC=/absolute/path/to/your/java/repo
-# or: PYTHONPATH=backend .venv/bin/python -m app.cli index /path/to/repo [--force] [--batch-size N]
+# or, anywhere:  python run.py index /absolute/path/to/your/java/repo [--force] [--batch-size N]
+# Windows path:  python run.py index C:\code\my-java-repo
 ```
 
 It prints a live `[analyze] 840/1700 files` counter and a JSON summary. It is **incremental and
@@ -142,8 +169,8 @@ unchanged, removed and skipped files).
 After indexing, resolve every reference (types, names, fields, calls, constructors) to its target:
 
 ```bash
-make resolve SRC=/absolute/path/to/your/java/repo          # summary
-PYTHONPATH=backend .venv/bin/python -m app.cli resolve /path/to/repo --examples 3   # + examples
+make resolve SRC=/absolute/path/to/your/java/repo          # summary (or: python run.py resolve PATH)
+python run.py resolve /path/to/repo --examples 3             # + examples
 ```
 
 Each reference ends up `resolved`, `ambiguous` (candidates listed) or `unresolved` (with a reason);
@@ -201,12 +228,12 @@ instant. `--no-knowledge` stops after the AST stage.
 ### Search, explain, trace, why (CLI)
 
 ```bash
-.venv/bin/python -m app.cli embed  --path /path/to/repo               # BM25 + embeddings (needs Ollama for vectors; --bm25-only otherwise)
-.venv/bin/python -m app.cli search "free shipping threshold" --path /path/to/repo
-.venv/bin/python -m app.cli explain ShippingCalculator.shippingFee --path /path/to/repo           # Developer Mentor answer
-.venv/bin/python -m app.cli explain ShippingCalculator.shippingFee --path /path/to/repo --no-llm  # analysis-only, no Ollama
-.venv/bin/python -m app.cli trace   ShippingCalculator.shippingFee --var fee --path /path/to/repo # where a value comes from / goes
-.venv/bin/python -m app.cli why     ShippingCalculator.shippingFee --lines 8-10 --path /path/to/repo
+python run.py cli embed  --path /path/to/repo               # BM25 + embeddings (needs Ollama for vectors; --bm25-only otherwise)
+python run.py cli search "free shipping threshold" --path /path/to/repo
+python run.py cli explain ShippingCalculator.shippingFee --path /path/to/repo           # Developer Mentor answer
+python run.py cli explain ShippingCalculator.shippingFee --path /path/to/repo --no-llm  # analysis-only, no Ollama
+python run.py cli trace   ShippingCalculator.shippingFee --var fee --path /path/to/repo # where a value comes from / goes
+python run.py cli why     ShippingCalculator.shippingFee --lines 8-10 --path /path/to/repo
 ```
 
 `explain`, `trace` and `why` need `index` first. They talk to Ollama (`OLLAMA_CHAT_MODEL`); if it is
@@ -218,9 +245,9 @@ not establish why 30 was chosen"* rather than invent a reason.
 ### Evaluate quality
 
 ```bash
-.venv/bin/python -m app.cli evaluate benchmarks/basic            # deterministic analysis
-.venv/bin/python -m app.cli evaluate benchmarks/enterprise
-.venv/bin/python -m app.cli evaluate benchmarks/basic --llm      # also score the model's answers
+python run.py cli evaluate benchmarks/basic            # deterministic analysis
+python run.py cli evaluate benchmarks/enterprise
+python run.py cli evaluate benchmarks/basic --llm      # also score the model's answers
 ```
 
 Each method is scored on purpose, structure, data flow, dependency and rule coverage, correctly
@@ -246,7 +273,7 @@ Besides `/health` and the indexing endpoints above (`POST /api/repositories/inde
 ### Inspect the AST of one file
 
 ```bash
-.venv/bin/python scripts/dump_ast.py path/to/File.java --no-source
+python scripts/dump_ast.py path/to/File.java --no-source
 ```
 
 Drop `--no-source` to include each method's full source text. The output is JSON with classes,
@@ -299,10 +326,13 @@ All settings come from environment variables or `.env`. Nothing machine-specific
 
 ## Development
 
-**No `make`** (for example on Windows)? Use `python run.py <task>` instead; it has the same tasks and
-works everywhere: `python run.py install`, `analyzer`, `check`, `backend`, `frontend`, `frontend-test`,
-`index PATH`, `scan PATH`, `resolve PATH`. Wherever this README says `make X`, run `python run.py X`.
-On Windows the virtualenv tools live in `.venv\Scripts` rather than `.venv/bin`.
+### No make (Windows, or anywhere)
+
+`python run.py <task>` has the same tasks as the Makefile and works on Windows, macOS and Linux:
+`install`, `analyzer`, `test`, `lint`, `typecheck`, `check`, `backend`, `frontend`, `frontend-test`,
+`index PATH`, `scan PATH`, `resolve PATH`, and `cli <command> ...` for anything else
+(`python run.py cli explain ShippingCalculator.shippingFee --path C:\repo`). Run `python run.py` alone
+to list them. On Windows the virtualenv tools live in `.venv\Scripts` rather than `.venv/bin`.
 
 | Command | Does |
 |---|---|
@@ -357,7 +387,9 @@ data/             runtime storage (git-ignored)
 
 | Symptom | Fix |
 |---|---|
-| `analyzer jar not found ... make analyzer` | run `make analyzer` |
+| `analyzer jar not found ... make analyzer` | run `make analyzer` (or `python run.py analyzer`) |
+| `uv` / `mvn` / `npm` "not recognized" (Windows) | install it (see Requirements) and reopen PowerShell so PATH refreshes |
+| `make` "not recognized" | not needed: use `python run.py <task>` |
 | `cannot run 'java'` or `Unable to locate a Java Runtime` | set `JAVA_BIN` in `.env` to a JDK 17+ binary |
 | `Java 17+ required, ... is Java N` | point `JAVA_BIN` at a newer JDK |
 | `make analyzer` builds with the wrong JDK or fails | pass `JDK17_HOME=...`; `/usr/libexec/java_home -V` lists installed JDKs |
