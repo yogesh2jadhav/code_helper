@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,15 +14,27 @@ from app.analyzer.java_parser import java_major_version, resolve_java_bin
 from app.config import get_settings
 
 
-def fake_java(tmp_path: Path, version: str, run_body: str = "exit 0") -> str:
-    script = tmp_path / "fake-java"
-    script.write_text(
-        "#!/bin/sh\n"
-        f'if [ "$1" = "-version" ]; then echo \'openjdk version "{version}"\' >&2; exit 0; fi\n'
+def fake_java(tmp_path: Path, version: str, run_body: str = "sys.exit(0)") -> str:
+    """A stand-in `java` that reports `version` for -version and otherwise runs `run_body` (Python).
+
+    Written as a Python script plus a tiny launcher so it behaves the same on Windows and POSIX.
+    """
+    impl = tmp_path / "fake_java_impl.py"
+    impl.write_text(
+        "import sys, time\n"
+        'if sys.argv[1:2] == ["-version"]:\n'
+        f"    sys.stderr.write('openjdk version \"{version}\"\\n')\n"
+        "    sys.exit(0)\n"
         f"{run_body}\n"
     )
-    script.chmod(script.stat().st_mode | stat.S_IEXEC)
-    return str(script)
+    if os.name == "nt":
+        launcher = tmp_path / "fake-java.cmd"
+        launcher.write_text(f'@echo off\r\n"{sys.executable}" "{impl}" %*\r\n')
+    else:
+        launcher = tmp_path / "fake-java"
+        launcher.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{impl}" "$@"\n')
+        launcher.chmod(launcher.stat().st_mode | stat.S_IEXEC)
+    return str(launcher)
 
 
 @pytest.fixture
@@ -54,7 +68,9 @@ def test_java_version_parsing(tmp_path: Path, version: str, major: int) -> None:
 
 
 def test_crashing_analyzer_marks_every_file_failed(tmp_path: Path, jar: Path) -> None:
-    analyzer = JavaParserAnalyzer(fake_java(tmp_path, "17.0.1", "echo boom >&2; exit 3"), jar)
+    analyzer = JavaParserAnalyzer(
+        fake_java(tmp_path, "17.0.1", "sys.stderr.write('boom\\n'); sys.exit(3)"), jar
+    )
     results = analyzer.analyze_files([tmp_path / "A.java", tmp_path / "B.java"])
     assert [r.status for r in results] == ["analyzer_error", "analyzer_error"]
     assert "exited with code 3" in results[0].errors[0] and "boom" in results[0].errors[0]
@@ -62,14 +78,16 @@ def test_crashing_analyzer_marks_every_file_failed(tmp_path: Path, jar: Path) ->
 
 def test_timeout_marks_files_failed(tmp_path: Path, jar: Path) -> None:
     analyzer = JavaParserAnalyzer(
-        fake_java(tmp_path, "17.0.1", "exec sleep 30"), jar, timeout_seconds=1
+        fake_java(tmp_path, "17.0.1", "time.sleep(5)"), jar, timeout_seconds=1
     )
     (result,) = analyzer.analyze_files([tmp_path / "A.java"])
     assert result.status == "analyzer_error" and "timed out" in result.errors[0]
 
 
 def test_malformed_output_lines_are_ignored(tmp_path: Path, jar: Path) -> None:
-    analyzer = JavaParserAnalyzer(fake_java(tmp_path, "17.0.1", "echo 'not json'; echo '{}'"), jar)
+    analyzer = JavaParserAnalyzer(
+        fake_java(tmp_path, "17.0.1", "print('not json'); print('{}')"), jar
+    )
     (result,) = analyzer.analyze_files([tmp_path / "A.java"])
     assert result.status == "analyzer_error"
     assert "no result" in result.errors[0]

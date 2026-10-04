@@ -39,6 +39,7 @@ def test_scan_endpoint_rejects_missing_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("SOURCE_ROOT", "")  # a developer's .env may point at a real repository
     from app.config import get_settings
 
     get_settings.cache_clear()
