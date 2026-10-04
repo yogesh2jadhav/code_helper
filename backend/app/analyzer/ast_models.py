@@ -7,6 +7,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+# Bump when the analyzer's JSON gains/changes facts; stored analyses with an older version are
+# re-analyzed automatically on the next index run.
+AST_SCHEMA_VERSION = 3
+
 
 class _Model(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
@@ -43,12 +47,38 @@ class FieldDecl(_Model):
 
 
 StatementKind = Literal[
-    "if", "else_if", "else", "switch", "case", "default", "for", "foreach", "while", "do",
-    "try", "catch", "finally", "return", "throw", "break", "continue",
+    "if",
+    "else_if",
+    "else",
+    "switch",
+    "case",
+    "default",
+    "for",
+    "foreach",
+    "while",
+    "do",
+    "try",
+    "catch",
+    "finally",
+    "return",
+    "throw",
+    "break",
+    "continue",
 ]
 ExpressionKind = Literal[
-    "method_call", "field_access", "assignment", "object_creation", "lambda", "method_ref",
-    "ternary", "comparison", "null_check", "logical", "switch_expr", "variable_declaration",
+    "method_call",
+    "field_access",
+    "assignment",
+    "object_creation",
+    "lambda",
+    "method_ref",
+    "ternary",
+    "comparison",
+    "null_check",
+    "logical",
+    "switch_expr",
+    "variable_declaration",
+    "name_ref",
 ]
 
 
@@ -60,6 +90,45 @@ class Statement(_Model):
     end_line: int
     depth: int
     text: str | None = None
+    start_column: int = 0
+    end_column: int = 0
+    # the part of the statement that is not its body: condition (if/while/do), iterable (foreach),
+    # init..update (for), selector (switch), parameter (catch), value (return/throw)
+    header_range: Range | None = None
+
+    @property
+    def range(self) -> Range:
+        return Range(
+            start_line=self.start_line,
+            start_column=self.start_column,
+            end_line=self.end_line,
+            end_column=self.end_column,
+        )
+
+
+class Range(_Model):
+    """A source range; lines and columns are 1-based, the end is inclusive."""
+
+    start_line: int
+    start_column: int
+    end_line: int
+    end_column: int
+
+    def contains(self, other: Range) -> bool:
+        return (self.start_line, self.start_column) <= (other.start_line, other.start_column) and (
+            other.end_line,
+            other.end_column,
+        ) <= (self.end_line, self.end_column)
+
+
+class ValueHint(_Model):
+    """Syntactic hint about an argument/initializer, used to narrow overloads and infer `var`."""
+
+    kind: Literal["literal", "name", "new", "cast", "this", "expr", "other"]
+    type: str | None = None
+    name: str | None = None
+    expr_id: int | None = None  # kind == "expr": a call/field access elsewhere in the same method
+    range: Range | None = None  # where the argument/initializer sits in the file
 
 
 class Expression(_Model):
@@ -76,7 +145,32 @@ class Expression(_Model):
     operator: str | None = None
     # Syntactic heuristics: stream_source, stream_op, collector, optional, predicate,
     # comparison, null_check, anonymous_class, initialized
+    # also: assignment_target, in_local_class (inside an anonymous/local class body), and for
+    # variable_declaration: lambda_param, catch_param, pattern, param, foreach, for_init, resource
     tags: list[str] = Field(default_factory=list)
+    receiver_kind: Literal["none", "this", "super", "expr", "cast", "literal", "other"] | None = (
+        None
+    )
+    receiver_expr_id: int | None = None  # id of the receiver's expression within the same method
+    receiver_type: str | None = None  # for cast / literal receivers
+    args: list[ValueHint] | None = None  # method_call and object_creation
+    initializer: ValueHint | None = None  # variable_declaration
+    scope_end_line: int | None = None  # variable_declaration: last line the variable is visible
+    start_column: int = 0
+    end_column: int = 0
+    # binary expressions and assignments: operand texts; declarations: initializer text
+    left: str | None = None
+    right: str | None = None
+    arg_texts: list[str] | None = None  # method_call and object_creation: argument source text
+
+    @property
+    def range(self) -> Range:
+        return Range(
+            start_line=self.start_line,
+            start_column=self.start_column,
+            end_line=self.end_line,
+            end_column=self.end_column,
+        )
 
 
 class Comment(_Model):

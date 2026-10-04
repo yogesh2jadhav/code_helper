@@ -81,8 +81,12 @@ class JavaParserAnalyzer:
         try:
             proc = subprocess.run(
                 [self._java_bin, "-jar", str(self._jar)],
-                input=stdin, capture_output=True, text=True, encoding="utf-8",
-                timeout=self._timeout, check=False,
+                input=stdin,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=self._timeout,
+                check=False,
             )
             stdout = proc.stdout
             if proc.returncode != 0:
@@ -110,7 +114,8 @@ class JavaParserAnalyzer:
             key = str(path.resolve())
             found = by_path.get(key) or by_path.get(str(path))
             parsed = found or ParsedFile(
-                path=key, status="analyzer_error",
+                path=key,
+                status="analyzer_error",
                 errors=[failure or "analyzer produced no result for this file"],
             )
             log_event(logger, "java_file_parsed", file=path.name, status=parsed.status)
@@ -118,8 +123,12 @@ class JavaParserAnalyzer:
 
         ok = sum(1 for r in results if r.ok)
         log_event(
-            logger, "java_analysis_completed", files=len(results), ok=ok,
-            failed=len(results) - ok, duration_ms=int((time.monotonic() - started) * 1000),
+            logger,
+            "java_analysis_completed",
+            files=len(results),
+            ok=ok,
+            failed=len(results) - ok,
+            duration_ms=int((time.monotonic() - started) * 1000),
         )
         if failure:
             logger.error("analyzer_failure", extra={"error": failure})

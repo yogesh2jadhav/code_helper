@@ -35,10 +35,42 @@ class ScanResult(BaseModel):
     ignored_dirs: int
     duration_ms: int
 
+    def summary(self) -> ScanSummary:
+        skipped: dict[str, int] = {}
+        for item in self.skipped:
+            skipped[item.reason] = skipped.get(item.reason, 0) + 1
+        return ScanSummary(
+            repository_id=self.repository_id,
+            root=self.root,
+            total_files=len(self.files),
+            added=len(self.added),
+            changed=len(self.changed),
+            unchanged=len(self.unchanged),
+            removed=len(self.removed),
+            skipped=skipped,
+            ignored_dirs=self.ignored_dirs,
+            duration_ms=self.duration_ms,
+        )
+
     @property
     def to_analyze(self) -> list[str]:
         """Relative paths needing (re)analysis under file-level invalidation."""
         return sorted([*self.added, *self.changed])
+
+
+class ScanSummary(BaseModel):
+    """Counts only; the full file list is served separately (it can be thousands of entries)."""
+
+    repository_id: str
+    root: str
+    total_files: int
+    added: int
+    changed: int
+    unchanged: int
+    removed: int
+    skipped: dict[str, int]
+    ignored_dirs: int
+    duration_ms: int
 
 
 class Repository(BaseModel):

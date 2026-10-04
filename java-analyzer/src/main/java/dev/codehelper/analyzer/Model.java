@@ -26,10 +26,58 @@ public final class Model {
             int endLine,
             String initializer) {}
 
-    /** A control/jump statement. depth = number of enclosing control structures. */
-    public record Statement(
-            int id, Integer parentId, String kind, int startLine, int endLine, int depth, String text) {}
+    /** A source range; lines and columns are 1-based, the end is inclusive. */
+    public record Range(int startLine, int startColumn, int endLine, int endColumn) {}
 
+    /**
+     * A control/jump statement. depth = number of enclosing control structures. headerRange covers
+     * the expression(s) that belong to the statement itself rather than its body: the condition of
+     * if/else_if/while/do, the iterable of foreach, init..update of for, the selector of switch, the
+     * parameter of catch, and the returned/thrown expression of return/throw.
+     */
+    public record Statement(
+            int id,
+            Integer parentId,
+            String kind,
+            int startLine,
+            int endLine,
+            int depth,
+            String text,
+            int startColumn,
+            int endColumn,
+            Range headerRange) {}
+
+    /**
+     * Cheap syntactic hint about an argument or initializer, used for overload narrowing.
+     * kind: literal (type = String|int|long|float|double|char|boolean|null) | name (name) |
+     * new (type) | cast (type) | this | expr (exprId = a recorded call/field-access in the same
+     * method, whose resolved type is the argument's type) | other.
+     */
+    public record ValueHint(String kind, String type, String name, Integer exprId, Range range) {
+        public ValueHint(String kind, String type, String name) {
+            this(kind, type, name, null, null);
+        }
+
+        public ValueHint(String kind, String type, String name, Integer exprId) {
+            this(kind, type, name, exprId, null);
+        }
+
+        public ValueHint withRange(Range r) {
+            return new ValueHint(kind, type, name, exprId, r);
+        }
+
+        public ValueHint withExprId(Integer id) {
+            return new ValueHint(kind, type, name, id, range);
+        }
+    }
+
+    /**
+     * receiverKind: none | this | super | expr (receiverExprId points at another expression of this
+     * method) | cast / literal (receiverType set) | other. scopeEndLine is set on declarations
+     * (variable_declaration): the last line on which the variable is in scope. initializer is the
+     * value hint of a declaration's initializer or an assignment's right-hand side. left/right are
+     * the operand texts of binary expressions and assignments; argTexts the call arguments' text.
+     */
     public record Expression(
             int id,
             Integer statementId,
@@ -42,7 +90,18 @@ public final class Model {
             String type,
             Integer argCount,
             String operator,
-            List<String> tags) {}
+            List<String> tags,
+            String receiverKind,
+            Integer receiverExprId,
+            String receiverType,
+            List<ValueHint> args,
+            ValueHint initializer,
+            Integer scopeEndLine,
+            int startColumn,
+            int endColumn,
+            String left,
+            String right,
+            List<String> argTexts) {}
 
     public record Comment(String kind, int startLine, int endLine, String text) {}
 

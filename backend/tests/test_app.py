@@ -35,14 +35,19 @@ def test_chroma_path_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     assert Settings(_env_file=None).effective_chroma_path == tmp_path / "c"
 
 
-def test_scan_endpoint_rejects_missing_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scan_endpoint_rejects_missing_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("DATA_ROOT", str(tmp_path))
     from app.config import get_settings
 
     get_settings.cache_clear()
     try:
         client = TestClient(create_app())
-        assert client.post("/api/repositories/scan", json={"path": str(tmp_path / "nope")}).status_code == 400
+        assert (
+            client.post("/api/repositories/scan", json={"path": str(tmp_path / "nope")}).status_code
+            == 400
+        )
         assert client.post("/api/repositories/scan", json={}).status_code == 400
     finally:
         get_settings.cache_clear()

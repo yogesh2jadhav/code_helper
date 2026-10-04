@@ -1,0 +1,403 @@
+{
+  "name": "basic",
+  "source": "src/main/java",
+  "description": "Small synthetic fixtures A-J: one behaviour each (spec Phase 20). Expectations were written by reading the code.",
+  "methods": [
+    {
+      "method": "bench.Cart#calculateTotal(double,int)",
+      "note": "A: simple method with a documenting comment",
+      "purpose": {
+        "mentions": [
+          "line total"
+        ],
+        "basis": "comment",
+        "level": "fact"
+      },
+      "inputs": [
+        "double price",
+        "int quantity"
+      ],
+      "output": "double",
+      "stages": [
+        "return"
+      ],
+      "data_flow": [
+        [
+          "price",
+          "return"
+        ],
+        [
+          "quantity",
+          "return"
+        ]
+      ],
+      "unknowns": []
+    },
+    {
+      "method": "bench.Grader#grade(int,boolean)",
+      "note": "B: nested if / else-if / else, zero comments; the returned strings are literals chosen by control flow, so `adjusted` does not flow to the return",
+      "purpose": {
+        "mentions": [
+          "grade"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "int score",
+        "boolean extraCredit"
+      ],
+      "output": "String",
+      "stages": [
+        "if",
+        "if"
+      ],
+      "rules": [
+        {
+          "kind": "threshold",
+          "literal": "90"
+        },
+        {
+          "kind": "threshold",
+          "literal": "75"
+        },
+        {
+          "kind": "decision",
+          "contains": "extraCredit"
+        }
+      ],
+      "data_flow": [
+        [
+          "score",
+          "adjusted"
+        ]
+      ],
+      "unknowns": [
+        "no comment states the purpose",
+        "why 90 was chosen",
+        "why 75 was chosen"
+      ]
+    },
+    {
+      "method": "bench.Stats#sum(int[])",
+      "note": "C: for loop accumulation",
+      "purpose": {
+        "mentions": [
+          "sum"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "int[] values"
+      ],
+      "output": "int",
+      "stages": [
+        "loop",
+        "return"
+      ],
+      "data_flow": [
+        [
+          "values",
+          "total"
+        ],
+        [
+          "total",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "no comment states the purpose"
+      ]
+    },
+    {
+      "method": "bench.Orders#revenueByRegion(List<Order>)",
+      "note": "D: stream pipeline filter + group + sum; lambda parameter types are not inferred",
+      "purpose": {
+        "mentions": [
+          "revenue"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "List<Order> orders"
+      ],
+      "output": "Map<String,Double>",
+      "stages": [
+        "return"
+      ],
+      "rules": [
+        {
+          "kind": "filter",
+          "contains": "isCancelled"
+        },
+        {
+          "kind": "grouping"
+        },
+        {
+          "kind": "aggregation"
+        }
+      ],
+      "dependencies": [
+        "List.stream",
+        "Order.isCancelled",
+        "Order.getRegion",
+        "Order.getAmount",
+        "Collectors.groupingBy",
+        "Collectors.summingDouble"
+      ],
+      "data_flow": [
+        [
+          "orders",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "no comment states the purpose"
+      ]
+    },
+    {
+      "method": "bench.Router#routeFor(String)",
+      "note": "E: switch with a default",
+      "purpose": {
+        "mentions": [
+          "route"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "String kind"
+      ],
+      "output": "String",
+      "stages": [
+        "switch"
+      ],
+      "rules": [
+        {
+          "kind": "switch",
+          "literal": "\"audit\""
+        }
+      ],
+      "unknowns": [
+        "no comment states the purpose"
+      ]
+    },
+    {
+      "method": "bench.Pipeline#run(String)",
+      "note": "F: one method calling three helpers (call graph)",
+      "purpose": {
+        "mentions": [
+          "run"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "String raw"
+      ],
+      "output": "int",
+      "stages": [
+        "call",
+        "if",
+        "return"
+      ],
+      "rules": [
+        {
+          "kind": "decision",
+          "contains": "isValid"
+        }
+      ],
+      "dependencies": [
+        "Pipeline.normalize",
+        "Pipeline.isValid",
+        "Pipeline.store"
+      ],
+      "data_flow": [
+        [
+          "raw",
+          "cleaned"
+        ],
+        [
+          "cleaned",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "no comment states the purpose"
+      ]
+    },
+    {
+      "method": "bench.Converter#convert(String)",
+      "note": "G: String -> trimmed String -> int -> Quantity",
+      "purpose": {
+        "mentions": [
+          "convert"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "String raw"
+      ],
+      "output": "Quantity",
+      "stages": [
+        "call",
+        "return"
+      ],
+      "dependencies": [
+        "String.trim",
+        "Integer.parseInt",
+        "Quantity.Quantity"
+      ],
+      "data_flow": [
+        [
+          "raw",
+          "trimmed"
+        ],
+        [
+          "trimmed",
+          "parsed"
+        ],
+        [
+          "parsed",
+          "result"
+        ],
+        [
+          "result",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "no comment states the purpose"
+      ]
+    },
+    {
+      "method": "bench.Discounts#discount(double,int)",
+      "note": "H: business-rule-like thresholds with magic numbers",
+      "purpose": {
+        "mentions": [
+          "discount"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "double amount",
+        "int years"
+      ],
+      "output": "double",
+      "stages": [
+        "if",
+        "if",
+        "return"
+      ],
+      "rules": [
+        {
+          "kind": "threshold",
+          "literal": "500"
+        },
+        {
+          "kind": "threshold",
+          "literal": "3"
+        }
+      ],
+      "data_flow": [
+        [
+          "amount",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "why 500 was chosen",
+        "why 3 was chosen"
+      ]
+    },
+    {
+      "method": "bench.Ledger#settle(List<Double>,double)",
+      "note": "I: zero comments; loop with nested branches",
+      "purpose": {
+        "mentions": [
+          "settle"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "List<Double> entries",
+        "double limit"
+      ],
+      "output": "double",
+      "stages": [
+        "loop",
+        "return"
+      ],
+      "rules": [
+        {
+          "kind": "threshold",
+          "literal": "0"
+        },
+        {
+          "kind": "comparison",
+          "contains": "limit"
+        }
+      ],
+      "data_flow": [
+        [
+          "entries",
+          "entry"
+        ],
+        [
+          "entry",
+          "balance"
+        ],
+        [
+          "limit",
+          "balance"
+        ],
+        [
+          "balance",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "no comment states the purpose"
+      ]
+    },
+    {
+      "method": "bench.Throttle#limit(int)",
+      "note": "J: an unexplained magic number; the system must say it is not established",
+      "purpose": {
+        "mentions": [
+          "limit"
+        ],
+        "basis": "name",
+        "level": "inference"
+      },
+      "inputs": [
+        "int load"
+      ],
+      "output": "boolean",
+      "stages": [
+        "return"
+      ],
+      "rules": [
+        {
+          "kind": "threshold",
+          "literal": "8472"
+        }
+      ],
+      "data_flow": [
+        [
+          "load",
+          "return"
+        ]
+      ],
+      "unknowns": [
+        "no comment states the purpose",
+        "why 8472 was chosen"
+      ]
+    }
+  ]
+}

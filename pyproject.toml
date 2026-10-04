@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
     "httpx>=0.27",
+    "chromadb>=1.5.9",
 ]
 
 [dependency-groups]
@@ -34,8 +35,13 @@ src = ["backend"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
 [tool.ruff.lint.per-file-ignores]
 "backend/tests/**" = ["E501"]
+"backend/app/analyzer/jdk_types.py" = ["E501"]  # word-list data tables
+"backend/app/analyzer/mutators.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

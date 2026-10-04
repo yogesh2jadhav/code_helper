@@ -12,11 +12,11 @@ class KeyValueFormatter(logging.Formatter):
     """`ts level logger event key=value ...` — extras passed via `extra={}` are appended."""
 
     def format(self, record: logging.LogRecord) -> str:
-        base = f"{self.formatTime(record, '%Y-%m-%dT%H:%M:%S')} {record.levelname} " \
-               f"{record.name} {record.getMessage()}"
-        extras = " ".join(
-            f"{k}={v}" for k, v in record.__dict__.items() if k not in _RESERVED
+        base = (
+            f"{self.formatTime(record, '%Y-%m-%dT%H:%M:%S')} {record.levelname} "
+            f"{record.name} {record.getMessage()}"
         )
+        extras = " ".join(f"{k}={v}" for k, v in record.__dict__.items() if k not in _RESERVED)
         text = f"{base} {extras}".rstrip()
         if record.exc_info:
             text += "\n" + self.formatException(record.exc_info)

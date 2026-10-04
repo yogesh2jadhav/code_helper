@@ -76,11 +76,56 @@ class ScanStore:
                 " size=excluded.size, last_scanned=excluded.last_scanned,"
                 " encoding_issue=excluded.encoding_issue, path=excluded.path",
                 [
-                    (f.id, f.repository_id, f.path, f.relative_path, f.hash, f.package, f.size,
-                     f.language, f.last_scanned.isoformat(), int(f.encoding_issue))
+                    (
+                        f.id,
+                        f.repository_id,
+                        f.path,
+                        f.relative_path,
+                        f.hash,
+                        f.package,
+                        f.size,
+                        f.language,
+                        f.last_scanned.isoformat(),
+                        int(f.encoding_issue),
+                    )
                     for f in files
                 ],
             )
+
+    def get_file(self, file_id: str) -> SourceFile | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute("SELECT * FROM source_files WHERE id = ?", (file_id,)).fetchone()
+        return _row_to_file(row) if row else None
+
+    def repository_root(self, repository_id: str) -> str | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT root_path FROM repositories WHERE id = ?", (repository_id,)
+            ).fetchone()
+        return row["root_path"] if row else None
+
+    def list_files(self, repository_id: str, limit: int, offset: int) -> list[SourceFile]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT * FROM source_files WHERE repository_id = ? ORDER BY relative_path"
+                " LIMIT ? OFFSET ?",
+                (repository_id, limit, offset),
+            ).fetchall()
+        return [_row_to_file(r) for r in rows]
+
+    def count_files(self, repository_id: str) -> int:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM source_files WHERE repository_id = ?", (repository_id,)
+            ).fetchone()
+        return int(row[0])
+
+    def has_repository(self, repository_id: str) -> bool:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM repositories WHERE id = ?", (repository_id,)
+            ).fetchone()
+        return row is not None
 
     def list_repositories(self) -> list[Repository]:
         with closing(self._connect()) as conn:
@@ -103,8 +148,14 @@ class ScanStore:
 
 def _row_to_file(r: sqlite3.Row) -> SourceFile:
     return SourceFile(
-        id=r["id"], repository_id=r["repository_id"], path=r["path"],
-        relative_path=r["relative_path"], hash=r["hash"], package=r["package"], size=r["size"],
-        language=r["language"], last_scanned=datetime.fromisoformat(r["last_scanned"]),
+        id=r["id"],
+        repository_id=r["repository_id"],
+        path=r["path"],
+        relative_path=r["relative_path"],
+        hash=r["hash"],
+        package=r["package"],
+        size=r["size"],
+        language=r["language"],
+        last_scanned=datetime.fromisoformat(r["last_scanned"]),
         encoding_issue=bool(r["encoding_issue"]),
     )

@@ -30,6 +30,20 @@ class Settings(BaseSettings):
     ollama_chat_model: str = "qwen2.5-coder:7b"
     ollama_embed_model: str = "nomic-embed-text"
 
+    # Retrieval and LLM calls
+    embedding_provider: str = "ollama"  # ollama | hash (offline, deterministic; for tests)
+    embed_batch_size: int = 32
+    retrieval_top_k: int = 10
+    ollama_timeout_seconds: int = 120
+    temperature: float = 0.2
+    context_window: int = 8192
+
+    # Share of MAX_CONTEXT_TOKENS given to each part of the LLM context (renormalised to sum to 1)
+    context_budget_target: float = 0.35  # the method itself: model, source, types
+    context_budget_callees: float = 0.25
+    context_budget_flow: float = 0.20  # data flow, rules, control-flow outline
+    context_budget_evidence: float = 0.20  # tests, comments, docs, callers, retrieved
+
     # Pipeline limits
     log_level: str = "INFO"
     max_context_tokens: int = 8000
@@ -42,10 +56,20 @@ class Settings(BaseSettings):
     # NoDecode: accept comma-separated env values instead of JSON arrays
     ignore_dirs: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
-            "target", "build", ".git", "node_modules", "generated", "out", ".idea", ".gradle",
+            "target",
+            "build",
+            ".git",
+            "node_modules",
+            "generated",
+            "out",
+            ".idea",
+            ".gradle",
         ]
     )
     max_file_bytes: int = 2_000_000
+
+    # Indexing: files per analyzer (JVM) call; progress and persistence are per batch
+    index_batch_size: int = 50
 
     # Java analyzer sidecar (JavaParser, requires JDK 17+)
     java_bin: str = "java"

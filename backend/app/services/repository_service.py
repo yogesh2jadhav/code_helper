@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import Settings
-from app.scanner.models import Repository, ScanResult
+from app.scanner.models import Repository, ScanResult, SourceFile
 from app.scanner.scanner import RepositoryScanner
 from app.scanner.store import ScanStore
 
@@ -27,3 +27,14 @@ class RepositoryService:
 
     def list_repositories(self) -> list[Repository]:
         return self._store.list_repositories()
+
+    def has_repository(self, repository_id: str) -> bool:
+        return self._store.has_repository(repository_id)
+
+    def list_files(
+        self, repository_id: str, limit: int, offset: int
+    ) -> tuple[int, list[SourceFile]]:
+        return (
+            self._store.count_files(repository_id),
+            self._store.list_files(repository_id, limit, offset),
+        )

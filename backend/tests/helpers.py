@@ -1,0 +1,119 @@
+"""Shared helpers for tests that need parsed + resolved Java, knowledge models and environments."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+from app.analyzer import JavaParserAnalyzer
+from app.analyzer.ast_models import Method
+from app.analyzer.resolution_models import FileResolution, Resolution
+from app.analyzer.symbol_resolver import SymbolResolver
+from app.analyzer.symbol_table import AnalyzedFile, SymbolTable
+from app.knowledge.builder import BuildOptions, BuiltKnowledge, KnowledgeBuilder
+from app.knowledge.models import MethodKnowledge
+from app.knowledge.source import SourceReader
+from app.knowledge.store import KnowledgeStore
+from app.retrieval.hybrid import HybridRetriever
+from tests.shop_repo import World
+
+
+@dataclass
+class Analysis:
+    files: list[AnalyzedFile]
+    table: SymbolTable
+    resolver: SymbolResolver
+    resolutions: list[FileResolution]
+
+
+def analyze_paths(analyzer: JavaParserAnalyzer, root: Path) -> Analysis:
+    paths = sorted(root.rglob("*.java"))
+    parsed = analyzer.analyze_files(paths)
+    files = [
+        AnalyzedFile(str(i), p.relative_to(root).as_posix(), r)
+        for i, (p, r) in enumerate(zip(paths, parsed, strict=True))
+    ]
+    table = SymbolTable(files)
+    resolver = SymbolResolver(table)
+    return Analysis(files, table, resolver, resolver.resolve_all(files))
+
+
+def analyze_sources(
+    analyzer: JavaParserAnalyzer, tmp_path: Path, sources: dict[str, str]
+) -> Analysis:
+    """Write `{relative path: java source}` under tmp_path and analyze + resolve it."""
+    for rel, text in sources.items():
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    return analyze_paths(analyzer, tmp_path)
+
+
+ParamNames = Callable[[str], "list[str] | None"]
+
+
+class ByMethod[T]:
+    """Build something per method of an analysis; look results up by `Class#signature` suffix."""
+
+    def __init__(
+        self,
+        analysis: Analysis,
+        build: Callable[[Method, str, dict[int, Resolution], ParamNames], T],
+    ) -> None:
+        asts: dict[tuple[str, str], Method] = {}
+        for f in analysis.files:
+            stack = list(f.parsed.types)
+            while stack:
+                t = stack.pop()
+                stack.extend(t.nested_types)
+                for m in [*t.methods, *t.constructors]:
+                    asts[(t.qualified_name, m.signature)] = m
+        params: dict[str, list[str]] = {}
+        for classes in analysis.table.classes.values():
+            for cls in classes:
+                symbols = [m for ms in cls.methods.values() for m in ms] + cls.constructors
+                params.update({m.id: m.param_names for m in symbols})
+        self.results: dict[str, T] = {}
+        for fr in analysis.resolutions:
+            for cr in fr.classes:
+                for mr in cr.methods:
+                    refs = {r.expression_id: r for r in mr.refs}
+                    self.results[mr.method_id] = build(
+                        asts[(cr.fqn, mr.signature)], mr.method_id, refs, params.get
+                    )
+
+    def __call__(self, suffix: str) -> T:
+        matches = [v for k, v in self.results.items() if k.endswith(suffix)]
+        assert len(matches) == 1, f"{suffix}: {len(matches)} matches"
+        return matches[0]
+
+
+def build_knowledge(analysis: Analysis, **option_kwargs: object) -> BuiltKnowledge:
+
+    builder = KnowledgeBuilder(
+        "test-repo",
+        analysis.files,
+        analysis.table,
+        analysis.resolver,
+        analysis.resolutions,
+        BuildOptions(**option_kwargs),  # type: ignore[arg-type]
+    )
+    return builder.build()
+
+
+@dataclass
+class Env:
+    world: World
+    store: KnowledgeStore
+    reader: SourceReader
+    retriever: HybridRetriever
+
+    @property
+    def repo(self) -> str:
+        return self.world.repository_id
+
+    def method(self, name: str) -> MethodKnowledge:
+        found = [m for m in self.store.iter_methods(self.repo) if m.name == name and not m.is_test]
+        assert len(found) == 1, f"{name}: {len(found)}"
+        return found[0]
